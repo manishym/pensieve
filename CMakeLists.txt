@@ -21,10 +21,25 @@ add_library(pensieve_io
     src/io/tcp_listener.cpp
     src/io/tcp_connection.cpp
     src/io/buffer_pool.cpp
+    src/io/udp_socket.cpp
 )
 
 target_include_directories(pensieve_io PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pensieve_io PUBLIC PkgConfig::URING)
+
+# ---------------------------------------------------------------------------
+# Membership library
+# ---------------------------------------------------------------------------
+add_library(pensieve_membership
+    src/membership/member_list.cpp
+    src/membership/swim_message.cpp
+    src/membership/disseminator.cpp
+    src/membership/ring_store.cpp
+    src/membership/swim_protocol.cpp
+)
+
+target_include_directories(pensieve_membership PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pensieve_membership PUBLIC pensieve_io)
 
 # ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
@@ -50,3 +65,19 @@ pensieve_add_test(test_buffer_pool      tests/io/test_buffer_pool.cpp)
 pensieve_add_test(test_tcp_echo         tests/io/test_tcp_echo.cpp)
 pensieve_add_test(test_coroutine        tests/io/test_coroutine.cpp)
 pensieve_add_test(test_e2e              tests/io/test_e2e.cpp)
+pensieve_add_test(test_udp_socket       tests/io/test_udp_socket.cpp)
+
+# Membership tests
+function(pensieve_add_membership_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE pensieve_membership GTest::gtest_main)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+pensieve_add_membership_test(test_node_info    tests/membership/test_node_info.cpp)
+pensieve_add_membership_test(test_member_list  tests/membership/test_member_list.cpp)
+pensieve_add_membership_test(test_swim_message  tests/membership/test_swim_message.cpp)
+pensieve_add_membership_test(test_disseminator  tests/membership/test_disseminator.cpp)
+pensieve_add_membership_test(test_ring_store     tests/membership/test_ring_store.cpp)
+pensieve_add_membership_test(test_swim_protocol tests/membership/test_swim_protocol.cpp)
+pensieve_add_membership_test(test_swim_e2e      tests/membership/test_swim_e2e.cpp)

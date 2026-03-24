@@ -20,7 +20,7 @@ namespace pensieve {
 enum class SwimMessageType : uint8_t { Ping = 1, Ack = 2, PingReq = 3 };
 
 struct MembershipUpdate {
-    enum class Type : uint8_t { Join = 0, Leave, Alive, Suspect, Dead };
+    enum class Type : uint8_t { Join = 0, Alive = 1, Suspect = 2, Dead = 3, Leave = 4 };
     Type type;
     NodeId node;
     uint64_t incarnation = 0;

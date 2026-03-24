@@ -5,54 +5,47 @@
 namespace pensieve {
 
 bool MemberList::add_node(const NodeInfo& info) {
-    for (auto& n : nodes_) {
-        if (n.id == info.id) {
-            if (info.incarnation > n.incarnation ||
-                (info.incarnation == n.incarnation &&
-                 state_supersedes(info.state, n.state))) {
-                n = info;
-                return true;
-            }
-            return false;
+    auto it = nodes_.find(info.id);
+    if (it != nodes_.end()) {
+        if (info.incarnation > it->second.incarnation ||
+            (info.incarnation == it->second.incarnation &&
+             state_supersedes(info.state, it->second.state))) {
+            it->second = info;
+            return true;
         }
+        return false;
     }
-    nodes_.push_back(info);
+    nodes_.emplace(info.id, info);
     return true;
 }
 
 bool MemberList::remove_node(const NodeId& id) {
-    auto it = std::find_if(nodes_.begin(), nodes_.end(),
-                           [&](const NodeInfo& n) { return n.id == id; });
-    if (it == nodes_.end()) return false;
-    nodes_.erase(it);
-    return true;
+    return nodes_.erase(id) > 0;
 }
 
 bool MemberList::update_state(const NodeId& id, NodeState new_state,
                               uint64_t incarnation) {
-    for (auto& n : nodes_) {
-        if (n.id != id) continue;
+    auto it = nodes_.find(id);
+    if (it == nodes_.end()) return false;
 
-        if (incarnation > n.incarnation) {
-            n.state = new_state;
-            n.incarnation = incarnation;
-            n.last_state_change = std::chrono::steady_clock::now();
-            return true;
-        }
-        if (incarnation == n.incarnation && state_supersedes(new_state, n.state)) {
-            n.state = new_state;
-            n.last_state_change = std::chrono::steady_clock::now();
-            return true;
-        }
-        return false;
+    auto& n = it->second;
+    if (incarnation > n.incarnation) {
+        n.state = new_state;
+        n.incarnation = incarnation;
+        n.last_state_change = std::chrono::steady_clock::now();
+        return true;
+    }
+    if (incarnation == n.incarnation && state_supersedes(new_state, n.state)) {
+        n.state = new_state;
+        n.last_state_change = std::chrono::steady_clock::now();
+        return true;
     }
     return false;
 }
 
 std::optional<NodeInfo> MemberList::get_node(const NodeId& id) const {
-    for (const auto& n : nodes_) {
-        if (n.id == id) return n;
-    }
+    auto it = nodes_.find(id);
+    if (it != nodes_.end()) return it->second;
     return std::nullopt;
 }
 
@@ -75,9 +68,9 @@ std::vector<NodeId> MemberList::random_peers(size_t k,
 
 std::vector<NodeId> MemberList::alive_peers(const NodeId& excluding) const {
     std::vector<NodeId> result;
-    for (const auto& n : nodes_) {
-        if (n.id != excluding && n.state == NodeState::Alive) {
-            result.push_back(n.id);
+    for (const auto& [id, info] : nodes_) {
+        if (id != excluding && info.state == NodeState::Alive) {
+            result.push_back(id);
         }
     }
     return result;

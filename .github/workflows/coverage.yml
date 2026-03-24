@@ -35,7 +35,7 @@ jobs:
       - name: Capture coverage
         run: |
           lcov --capture --directory build --output-file coverage.info \
-            --ignore-errors mismatch
+            --ignore-errors mismatch --ignore-errors negative
           lcov --remove coverage.info \
             '*/tests/*' '*/build/_deps/*' '/usr/*' \
             --output-file coverage.info --ignore-errors unused

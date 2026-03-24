@@ -46,10 +46,12 @@ Task<> SwimProtocol::probe_loop() {
         alive = co_await indirect_ping(*target);
         if (alive) continue;
 
-        if (members_.update_state(*target, NodeState::Suspect,
-                                  members_.get_node(*target)->incarnation)) {
+        auto node_info = members_.get_node(*target);
+        if (node_info &&
+            members_.update_state(*target, NodeState::Suspect,
+                                  node_info->incarnation)) {
             disseminator_.enqueue({MembershipUpdate::Type::Suspect, *target,
-                                   members_.get_node(*target)->incarnation});
+                                   node_info->incarnation});
         }
     }
 }
@@ -77,17 +79,17 @@ Task<> SwimProtocol::suspicion_reaper() {
         if (!running_.load(std::memory_order_relaxed)) break;
 
         auto now = std::chrono::steady_clock::now();
-        for (const auto& node : members_.all_nodes()) {
-            if (node.id == self_) continue;
+        for (const auto& [id, node] : members_.all_nodes()) {
+            if (id == self_) continue;
             if (node.state != NodeState::Suspect) continue;
 
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - node.last_state_change);
             if (elapsed >= config_.suspect_timeout) {
-                if (members_.update_state(node.id, NodeState::Dead,
+                if (members_.update_state(id, NodeState::Dead,
                                           node.incarnation)) {
                     disseminator_.enqueue({MembershipUpdate::Type::Dead,
-                                           node.id, node.incarnation});
+                                           id, node.incarnation});
                 }
             }
         }
@@ -188,6 +190,7 @@ void SwimProtocol::on_ping_req(const SwimMessage& msg,
     spawn(relay_ping(*msg.target, msg.sender, msg.seq_num));
 }
 
+// cppcheck-suppress passedByValue ; coroutine must own copies that outlive caller
 Task<> SwimProtocol::relay_ping(NodeId target, NodeId requester,
                                 uint32_t orig_seq) {
     SwimMessage ping;

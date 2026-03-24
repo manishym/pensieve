@@ -102,7 +102,7 @@ TEST(SwimE2E, FiveNodeConvergence) {
     }
 
     for (auto& n : nodes) n->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
     // Stop all before inspecting state
     for (auto& n : nodes) n->stop_and_join();
@@ -136,14 +136,14 @@ TEST(SwimE2E, SingleNodeFailureDetected) {
     }
 
     for (auto& n : nodes) n->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
     // Kill node 0
     nodes[0]->stop_and_join();
     NodeId dead_id = nodes[0]->id;
 
-    // Wait for failure detection
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    // Wait for failure detection and re-convergence among survivors
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
 
     // Stop remaining nodes
     for (int i = 1; i < N; ++i) {

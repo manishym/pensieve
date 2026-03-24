@@ -146,10 +146,10 @@ TEST(SwimMessage, AllUpdateTypes) {
     msg.sender = {"10.0.0.1", 5000};
     msg.updates = {
         {MembershipUpdate::Type::Join, {"a", 1}, 0},
-        {MembershipUpdate::Type::Leave, {"b", 2}, 1},
-        {MembershipUpdate::Type::Alive, {"c", 3}, 2},
-        {MembershipUpdate::Type::Suspect, {"d", 4}, 3},
-        {MembershipUpdate::Type::Dead, {"e", 5}, 4},
+        {MembershipUpdate::Type::Alive, {"b", 2}, 1},
+        {MembershipUpdate::Type::Suspect, {"c", 3}, 2},
+        {MembershipUpdate::Type::Dead, {"d", 4}, 3},
+        {MembershipUpdate::Type::Leave, {"e", 5}, 4},
     };
 
     auto bytes = msg.serialize();
@@ -157,8 +157,9 @@ TEST(SwimMessage, AllUpdateTypes) {
     ASSERT_TRUE(decoded.has_value());
     ASSERT_EQ(decoded->updates.size(), 5u);
 
-    for (size_t i = 0; i < 5; ++i) {
-        EXPECT_EQ(static_cast<uint8_t>(decoded->updates[i].type),
-                  static_cast<uint8_t>(i));
-    }
+    EXPECT_EQ(decoded->updates[0].type, MembershipUpdate::Type::Join);
+    EXPECT_EQ(decoded->updates[1].type, MembershipUpdate::Type::Alive);
+    EXPECT_EQ(decoded->updates[2].type, MembershipUpdate::Type::Suspect);
+    EXPECT_EQ(decoded->updates[3].type, MembershipUpdate::Type::Dead);
+    EXPECT_EQ(decoded->updates[4].type, MembershipUpdate::Type::Leave);
 }

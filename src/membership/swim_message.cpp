@@ -69,7 +69,7 @@ std::optional<MembershipUpdate> deserialize_update(std::span<const uint8_t> data
                                                    size_t& off) {
     uint8_t type_val;
     if (!read_u8(data, off, type_val)) return std::nullopt;
-    if (type_val > static_cast<uint8_t>(MembershipUpdate::Type::Dead))
+    if (type_val > static_cast<uint8_t>(MembershipUpdate::Type::Leave))
         return std::nullopt;
 
     auto node = deserialize_node_id(data, off);

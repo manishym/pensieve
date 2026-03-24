@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 #include "membership/node_info.h"
@@ -17,7 +18,7 @@ public:
                       uint64_t incarnation);
 
     std::optional<NodeInfo> get_node(const NodeId& id) const;
-    const std::vector<NodeInfo>& all_nodes() const { return nodes_; }
+    const std::unordered_map<NodeId, NodeInfo>& all_nodes() const { return nodes_; }
     size_t size() const { return nodes_.size(); }
 
     std::optional<NodeId> random_peer(const NodeId& excluding);
@@ -26,7 +27,7 @@ public:
     std::vector<NodeId> alive_peers(const NodeId& excluding) const;
 
 private:
-    std::vector<NodeInfo> nodes_;
+    std::unordered_map<NodeId, NodeInfo> nodes_;
     std::mt19937 rng_{std::random_device{}()};
 };
 

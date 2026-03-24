@@ -1,0 +1,94 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liburing-dev lcov
+
+      - name: Configure with coverage flags
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage"
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Capture coverage
+        run: |
+          lcov --capture --directory build --output-file coverage.info \
+            --ignore-errors mismatch
+          lcov --remove coverage.info \
+            '*/tests/*' '*/build/_deps/*' '/usr/*' \
+            --output-file coverage.info --ignore-errors unused
+          lcov --list coverage.info
+
+      - name: Generate coverage summary
+        id: coverage-summary
+        run: |
+          SUMMARY=$(lcov --summary coverage.info 2>&1)
+
+          LINE_PCT=$(echo "$SUMMARY" | grep 'lines' | grep -oP '[\d.]+%' | head -1)
+          FUNC_PCT=$(echo "$SUMMARY" | grep 'functions' | grep -oP '[\d.]+%' | head -1)
+          BRANCH_PCT=$(echo "$SUMMARY" | grep 'branches' | grep -oP '[\d.]+%' | head -1)
+
+          LINE_NUM=$(echo "${LINE_PCT%%%}" | cut -d. -f1)
+          if [ "$LINE_NUM" -ge 80 ]; then LINE_BADGE="🟢"; elif [ "$LINE_NUM" -ge 60 ]; then LINE_BADGE="🟡"; else LINE_BADGE="🔴"; fi
+          FUNC_NUM=$(echo "${FUNC_PCT%%%}" | cut -d. -f1)
+          if [ "$FUNC_NUM" -ge 80 ]; then FUNC_BADGE="🟢"; elif [ "$FUNC_NUM" -ge 60 ]; then FUNC_BADGE="🟡"; else FUNC_BADGE="🔴"; fi
+
+          FILE_DETAIL=$(lcov --list coverage.info 2>&1 | grep -E '^\S.*\|' | head -20)
+
+          {
+            echo 'body<<COVERAGE_EOF'
+            echo "## 📊 Coverage Report"
+            echo ""
+            echo "| Metric | Coverage |"
+            echo "|--------|----------|"
+            echo "| ${LINE_BADGE} Lines | **${LINE_PCT}** |"
+            echo "| ${FUNC_BADGE} Functions | **${FUNC_PCT}** |"
+            echo "| Branches | **${BRANCH_PCT:-N/A}** |"
+            echo ""
+            echo "<details><summary>Per-file breakdown</summary>"
+            echo ""
+            echo '```'
+            echo "$FILE_DETAIL"
+            echo '```'
+            echo ""
+            echo "</details>"
+            echo ""
+            echo "*Coverage thresholds: 🟢 ≥80% 🟡 ≥60% 🔴 <60%*"
+            echo 'COVERAGE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post coverage to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: ${{ steps.coverage-summary.outputs.body }}
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: debug
+            cxx_flags: ""
+            linker_flags: ""
+
+          - name: asan
+            cxx_flags: "-fsanitize=address -fno-omit-frame-pointer"
+            linker_flags: "-fsanitize=address"
+
+          - name: tsan
+            cxx_flags: "-fsanitize=thread"
+            linker_flags: "-fsanitize=thread"
+
+          - name: ubsan
+            cxx_flags: "-fsanitize=undefined -fno-sanitize-recover=all"
+            linker_flags: "-fsanitize=undefined"
+
+    name: ${{ matrix.name }}
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      TSAN_OPTIONS: second_deadlock_stack=1:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liburing-dev
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
+          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.linker_flags }}"
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

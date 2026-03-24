@@ -1,0 +1,69 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lizard:
+    name: Lizard (Complexity)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lizard
+        run: pip install lizard
+
+      - name: Run Lizard
+        run: |
+          echo "## Lizard Complexity Report" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          lizard src/ -l cpp -C 15 -L 100 -a 6 -w \
+            --sort cyclomatic_complexity | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  cppcheck:
+    name: cppcheck (Static Analysis)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck liburing-dev
+
+      - name: Generate compile_commands.json
+        run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run cppcheck
+        run: |
+          echo "## cppcheck Report" >> "$GITHUB_STEP_SUMMARY"
+          cppcheck --project=build/compile_commands.json \
+            --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --inline-suppr 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+  clang-tidy:
+    name: clang-tidy (Lint)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy liburing-dev
+
+      - name: Generate compile_commands.json
+        run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        run: |
+          echo "## clang-tidy Report" >> "$GITHUB_STEP_SUMMARY"
+          find src/ -name '*.cpp' | xargs clang-tidy \
+            -p build \
+            --header-filter='src/.*' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

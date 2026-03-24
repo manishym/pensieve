@@ -69,8 +69,7 @@ void IoUringContext::process_cqe(io_uring_cqe* cqe) {
         if (comp->callback) {
             (*comp->callback)(cqe->res);
             if (comp->owns_callback) {
-                delete comp->callback;
-                delete comp;
+                delete reinterpret_cast<OwnedCallback*>(comp);
             }
         }
         break;

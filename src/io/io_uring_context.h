@@ -34,6 +34,11 @@ struct Completion {
     }
 };
 
+struct OwnedCallback {
+    Completion completion;
+    std::function<void(int32_t)> callback;
+};
+
 class IoUringContext {
 public:
     explicit IoUringContext(uint32_t queue_depth = kDefaultQueueDepth,

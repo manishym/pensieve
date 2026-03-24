@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <atomic>
 #include <cstring>
+#include <memory>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <thread>
@@ -146,17 +147,15 @@ TEST(TcpEcho, GracefulClose) {
     std::atomic<bool> saw_close{false};
 
     listener.start([&](TcpConnection conn) {
-        auto* c = new TcpConnection(std::move(conn));
-        auto* buf = new char[128]{};
-        c->async_read(buf, 128, [c, buf, &saw_close, &ctx](int32_t n) {
-            if (n == 0) {
-                saw_close.store(true);
-            }
-            c->close();
-            delete[] buf;
-            delete c;
-            ctx.stop();
-        });
+        auto c = std::make_shared<TcpConnection>(std::move(conn));
+        auto buf = std::shared_ptr<char[]>(new char[128]{});
+        c->async_read(buf.get(), 128,
+            [c, buf, &saw_close, &ctx](int32_t n) {
+                if (n == 0) {
+                    saw_close.store(true);
+                }
+                ctx.stop();
+            });
     });
 
     std::thread client([port] {

@@ -7,7 +7,7 @@ namespace pensieve {
 TcpConnection::TcpConnection(IoUringContext& ctx, fd_t fd)
     : ctx_(&ctx), fd_(fd) {}
 
-TcpConnection::~TcpConnection() = default;
+TcpConnection::~TcpConnection() { close(); }
 
 TcpConnection::TcpConnection(TcpConnection&& other) noexcept
     : ctx_(other.ctx_), fd_(other.fd_) {
@@ -27,10 +27,11 @@ TcpConnection& TcpConnection::operator=(TcpConnection&& other) noexcept {
 namespace {
 
 Completion* make_owned_completion(std::function<void(int32_t)> cb) {
-    auto* owned_cb = new std::function<void(int32_t)>(std::move(cb));
-    auto* comp = new Completion(Completion::from_callback(owned_cb));
-    comp->owns_callback = true;
-    return comp;
+    auto* owned = new OwnedCallback;
+    owned->callback = std::move(cb);
+    owned->completion = Completion::from_callback(&owned->callback);
+    owned->completion.owns_callback = true;
+    return &owned->completion;
 }
 
 }  // namespace
@@ -79,6 +80,12 @@ void TcpConnection::close() {
         ::close(fd_);
         fd_ = -1;
     }
+}
+
+fd_t TcpConnection::release() {
+    fd_t fd = fd_;
+    fd_ = -1;
+    return fd;
 }
 
 }  // namespace pensieve

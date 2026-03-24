@@ -30,6 +30,7 @@ public:
                            std::function<void(int32_t)> cb);
 
     void close();
+    fd_t release();
     fd_t fd() const { return fd_; }
 
 private:

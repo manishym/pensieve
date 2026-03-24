@@ -11,9 +11,11 @@ BufferPool::BufferPool(IoUringContext& ctx, size_t buffer_size,
     : ctx_(ctx),
       buffer_size_(buffer_size),
       buffer_count_(buffer_count) {
+    constexpr size_t kPageSize = 4096;
     region_size_ = buffer_size_ * buffer_count_;
+    region_size_ = (region_size_ + kPageSize - 1) & ~(kPageSize - 1);
 
-    region_ = std::aligned_alloc(4096, region_size_);
+    region_ = std::aligned_alloc(kPageSize, region_size_);
     if (!region_) {
         throw std::runtime_error("aligned_alloc failed for buffer pool");
     }

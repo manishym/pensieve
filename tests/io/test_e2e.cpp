@@ -105,7 +105,7 @@ TEST(E2E, FullStackEcho) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });
@@ -171,7 +171,7 @@ TEST(E2E, MultiMessageConversation) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });
@@ -254,7 +254,7 @@ TEST(E2E, LargePayload) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });
@@ -323,7 +323,7 @@ TEST(E2E, BufferPoolExhaustion) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });
@@ -382,7 +382,7 @@ TEST(E2E, ReconnectLifecycle) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });
@@ -461,7 +461,7 @@ TEST(E2E, StressTest) {
     };
 
     listener.start([&](TcpConnection conn) {
-        fd_t fd = conn.fd();
+        fd_t fd = conn.release();
         sessions.push_back(handle_client(fd));
         sessions.back().start();
     });

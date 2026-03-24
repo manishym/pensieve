@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -18,9 +19,8 @@ inline uint32_t hash_key(std::string_view key) {
 }
 
 inline uint32_t hash_node_token(const NodeId& node, uint32_t vnode_index) {
-    std::string canonical = node.host + ":" +
-                            std::to_string(node.gossip_port) + "#" +
-                            std::to_string(vnode_index);
+    std::string canonical =
+        std::format("{}:{}#{}", node.host, node.gossip_port, vnode_index);
     uint32_t out = 0;
     murmurhash3_x86_32(canonical.data(), canonical.size(), kDefaultHashSeed,
                        &out);

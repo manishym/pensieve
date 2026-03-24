@@ -8,8 +8,8 @@
 namespace pensieve {
 
 struct RangeMigration {
-    uint32_t range_start;  // inclusive
-    uint32_t range_end;    // exclusive (wraps at UINT32_MAX+1 -> 0)
+    uint32_t range_start;  // exclusive start (previous token position)
+    uint32_t range_end;    // inclusive end (token position); range wraps when end <= start
     NodeId from_node;
     NodeId to_node;
 };

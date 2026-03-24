@@ -21,18 +21,18 @@ TEST(MurmurHash3, X86_32_EmptyWithSeed) {
 }
 
 TEST(MurmurHash3, X86_32_KnownVectors) {
-    // Reference values from SMHasher verification
     uint32_t out = 0;
 
-    murmurhash3_x86_32("a", 1, 0, &out);
-    uint32_t h_a = out;
+    // Single-block + tail: verified against Python reference implementation
+    murmurhash3_x86_32("hello", 5, 0, &out);
+    EXPECT_EQ(out, 0x248bfa47u);
 
-    murmurhash3_x86_32("b", 1, 0, &out);
-    uint32_t h_b = out;
+    murmurhash3_x86_32("hello", 5, 42, &out);
+    EXPECT_EQ(out, 0xe2dbd2e1u);
 
-    EXPECT_NE(h_a, h_b);
-    EXPECT_NE(h_a, 0u);
-    EXPECT_NE(h_b, 0u);
+    // Multi-block (3 blocks + 1 tail byte)
+    murmurhash3_x86_32("hello world!!", 13, 0, &out);
+    EXPECT_EQ(out, 0xe2cada3fu);
 }
 
 TEST(MurmurHash3, X86_32_Deterministic) {

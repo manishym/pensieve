@@ -81,11 +81,10 @@ void murmurhash3_x86_32(const void* key, size_t len, uint32_t seed,
     const uint32_t c2 = 0x1b873593;
 
     const auto* blocks =
-        reinterpret_cast<const uint32_t*>(data + nblocks * 4);
+        reinterpret_cast<const uint32_t*>(data);
 
     for (size_t i = 0; i < nblocks; ++i) {
-        // Read blocks in reverse order (matches reference impl)
-        uint32_t k1 = getblock32(blocks, static_cast<size_t>(-static_cast<ptrdiff_t>(i) - 1));
+        uint32_t k1 = getblock32(blocks, i);
 
         k1 *= c1;
         k1 = rotl32(k1, 15);

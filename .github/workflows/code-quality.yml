@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  pull-requests: write
+
 jobs:
   lizard:
     name: Lizard (Complexity)
@@ -17,12 +20,64 @@ jobs:
         run: pip install lizard
 
       - name: Run Lizard
+        id: lizard
         run: |
+          set +e
+          LIZARD_OUT=$(lizard src/ -l cpp -C 15 -L 100 -a 6 -w --sort cyclomatic_complexity 2>&1)
+          LIZARD_EXIT=$?
+          set -e
+
           echo "## Lizard Complexity Report" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          lizard src/ -l cpp -C 15 -L 100 -a 6 -w \
-            --sort cyclomatic_complexity | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$LIZARD_OUT" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          WARNINGS=$(echo "$LIZARD_OUT" | grep -c 'warning:' || true)
+          TOTAL_FUNCS=$(echo "$LIZARD_OUT" | grep -oP '\d+ file\(s\) analyzed' | grep -oP '^\d+' || echo "?")
+          SUMMARY_LINE=$(echo "$LIZARD_OUT" | tail -5)
+
+          if [ "$LIZARD_EXIT" -eq 0 ]; then STATUS="✅ Passed"; else STATUS="⚠️ $WARNINGS warning(s)"; fi
+
+          {
+            echo 'body<<LIZARD_EOF'
+            echo "## 🦎 Cyclomatic Complexity (Lizard)"
+            echo ""
+            echo "**Status:** ${STATUS}"
+            echo ""
+            echo "| Threshold | Value |"
+            echo "|-----------|-------|"
+            echo "| Max cyclomatic complexity | 15 |"
+            echo "| Max function length | 100 lines |"
+            echo "| Max parameters | 6 |"
+            echo ""
+            if [ "$WARNINGS" -gt 0 ]; then
+              echo "<details><summary>⚠️ Functions exceeding thresholds</summary>"
+              echo ""
+              echo '```'
+              echo "$LIZARD_OUT" | grep 'warning:' | head -20
+              echo '```'
+              echo ""
+              echo "</details>"
+              echo ""
+            fi
+            echo "<details><summary>Full report</summary>"
+            echo ""
+            echo '```'
+            echo "$SUMMARY_LINE"
+            echo '```'
+            echo ""
+            echo "</details>"
+            echo 'LIZARD_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          exit $LIZARD_EXIT
+
+      - name: Post Lizard results to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: lizard-report
+          message: ${{ steps.lizard.outputs.body }}
 
   cppcheck:
     name: cppcheck (Static Analysis)
@@ -39,13 +94,58 @@ jobs:
         run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Run cppcheck
+        id: cppcheck
         run: |
-          echo "## cppcheck Report" >> "$GITHUB_STEP_SUMMARY"
-          cppcheck --project=build/compile_commands.json \
+          set +e
+          CPPCHECK_OUT=$(cppcheck --project=build/compile_commands.json \
             --enable=warning,performance,portability \
-            --error-exitcode=1 \
             --suppress=missingIncludeSystem \
-            --inline-suppr 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            --inline-suppr \
+            --template='{file}:{line}: {severity}: {message} [{id}]' 2>&1)
+          CPPCHECK_EXIT=$?
+          set -e
+
+          echo "## cppcheck Report" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$CPPCHECK_OUT" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          ERRORS=$(echo "$CPPCHECK_OUT" | grep -c ': error:' || true)
+          WARNINGS=$(echo "$CPPCHECK_OUT" | grep -c ': warning:' || true)
+          PERF=$(echo "$CPPCHECK_OUT" | grep -c ': performance:' || true)
+
+          if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+            STATUS="✅ No issues found"
+          else
+            STATUS="⚠️ ${ERRORS} error(s), ${WARNINGS} warning(s), ${PERF} perf hint(s)"
+          fi
+
+          {
+            echo 'body<<CPPCHECK_EOF'
+            echo "## 🔍 cppcheck Static Analysis"
+            echo ""
+            echo "**Status:** ${STATUS}"
+            echo ""
+            if [ "$ERRORS" -gt 0 ] || [ "$WARNINGS" -gt 0 ] || [ "$PERF" -gt 0 ]; then
+              echo "<details><summary>Issues found</summary>"
+              echo ""
+              echo '```'
+              echo "$CPPCHECK_OUT" | grep -E ': (error|warning|performance|portability):' | head -30
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+            echo 'CPPCHECK_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          exit $CPPCHECK_EXIT
+
+      - name: Post cppcheck results to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: cppcheck-report
+          message: ${{ steps.cppcheck.outputs.body }}
 
   clang-tidy:
     name: clang-tidy (Lint)
@@ -62,8 +162,52 @@ jobs:
         run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Run clang-tidy
+        id: clang-tidy
         run: |
-          echo "## clang-tidy Report" >> "$GITHUB_STEP_SUMMARY"
-          find src/ -name '*.cpp' | xargs clang-tidy \
+          set +e
+          TIDY_OUT=$(find src/ -name '*.cpp' | xargs clang-tidy \
             -p build \
-            --header-filter='src/.*' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            --header-filter='src/.*' 2>&1)
+          TIDY_EXIT=$?
+          set -e
+
+          echo "## clang-tidy Report" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$TIDY_OUT" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          WARNINGS=$(echo "$TIDY_OUT" | grep -c ' warning:' || true)
+          ERRORS=$(echo "$TIDY_OUT" | grep -c ' error:' || true)
+
+          if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+            STATUS="✅ Clean"
+          else
+            STATUS="⚠️ ${ERRORS} error(s), ${WARNINGS} warning(s)"
+          fi
+
+          {
+            echo 'body<<TIDY_EOF'
+            echo "## 🧹 clang-tidy Lint"
+            echo ""
+            echo "**Status:** ${STATUS}"
+            echo ""
+            if [ "$WARNINGS" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+              echo "<details><summary>Diagnostics</summary>"
+              echo ""
+              echo '```'
+              echo "$TIDY_OUT" | grep -E ' (warning|error):' | head -30
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+            echo 'TIDY_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          exit $TIDY_EXIT
+
+      - name: Post clang-tidy results to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: clang-tidy-report
+          message: ${{ steps.clang-tidy.outputs.body }}

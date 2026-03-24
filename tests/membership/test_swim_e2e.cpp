@@ -23,6 +23,8 @@ struct VirtualNode {
     std::unique_ptr<SwimProtocol> protocol;
     std::thread runner;
 
+    static constexpr uint32_t kTestVnodes = 16;
+
     VirtualNode(uint16_t port, SwimProtocol::Config config)
         : sock("127.0.0.1", port),
           id{"127.0.0.1", sock.port()} {
@@ -31,13 +33,7 @@ struct VirtualNode {
         self_info.state = NodeState::Alive;
         members.add_node(self_info);
 
-        std::vector<uint32_t> tokens;
-        uint32_t hash = std::hash<std::string>{}(
-            id.host + ":" + std::to_string(id.gossip_port));
-        for (int v = 0; v < 3; ++v) {
-            tokens.push_back(hash + static_cast<uint32_t>(v * 1000000));
-        }
-        ring.add_node(id, tokens);
+        ring.add_node(id, kTestVnodes);
 
         protocol = std::make_unique<SwimProtocol>(ctx, sock, members,
                                                   disseminator, id, config);
@@ -49,13 +45,7 @@ struct VirtualNode {
         info.state = NodeState::Alive;
         members.add_node(info);
 
-        std::vector<uint32_t> tokens;
-        uint32_t hash = std::hash<std::string>{}(
-            peer_id.host + ":" + std::to_string(peer_id.gossip_port));
-        for (int v = 0; v < 3; ++v) {
-            tokens.push_back(hash + static_cast<uint32_t>(v * 1000000));
-        }
-        ring.add_node(peer_id, tokens);
+        ring.add_node(peer_id, kTestVnodes);
     }
 
     void start() {
@@ -102,7 +92,7 @@ TEST(SwimE2E, FiveNodeConvergence) {
     }
 
     for (auto& n : nodes) n->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     // Stop all before inspecting state
     for (auto& n : nodes) n->stop_and_join();
@@ -194,7 +184,7 @@ TEST(SwimE2E, RingStoreReflectsMembership) {
     // Each node's ring store should contain tokens for all 3 nodes
     for (int i = 0; i < N; ++i) {
         auto snap = nodes[i]->ring.snapshot();
-        EXPECT_EQ(snap->size(), static_cast<size_t>(N * 3))
+        EXPECT_EQ(snap->size(), static_cast<size_t>(N * VirtualNode::kTestVnodes))
             << "Node " << i << " ring has wrong token count";
 
         // Verify all nodes have tokens in the ring

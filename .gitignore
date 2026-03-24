@@ -1,0 +1,57 @@
+# Build outputs
+build/
+cmake-build-*/
+out/
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Debug / profiling
+*.dSYM/
+*.d
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+third_party/build/
+_deps/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+CTestTestfile.cmake
+
+# FlatBuffers generated
+*_generated.h
+
+# Conan (if used)
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
+
+# Core dumps
+core
+core.*
+vgcore.*

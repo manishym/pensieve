@@ -6,6 +6,7 @@
 
 #include "hash/murmurhash3.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace pensieve {
@@ -48,6 +49,23 @@ inline uint64_t getblock64(const uint64_t* p, size_t i) {
     uint64_t v;
     std::memcpy(&v, p + i, sizeof(v));
     return v;
+}
+
+// Accumulate tail bytes [start, start+count) into a 32-bit word,
+// byte at offset 0 in the least-significant position.
+inline uint32_t tail_word32(const uint8_t* tail, size_t start, size_t count) {
+    uint32_t k = 0;
+    for (size_t i = 0; i < count; ++i)
+        k ^= static_cast<uint32_t>(tail[start + i]) << (i * 8);
+    return k;
+}
+
+// Same for 64-bit words.
+inline uint64_t tail_word64(const uint8_t* tail, size_t start, size_t count) {
+    uint64_t k = 0;
+    for (size_t i = 0; i < count; ++i)
+        k ^= static_cast<uint64_t>(tail[start + i]) << (i * 8);
+    return k;
 }
 
 }  // namespace
@@ -142,35 +160,23 @@ void murmurhash3_x86_128(const void* key, size_t len, uint32_t seed,
     }
 
     const auto* tail = data + nblocks * 16;
+    const size_t rem = len & 15;
 
-    uint32_t k1 = 0;
-    uint32_t k2 = 0;
-    uint32_t k3 = 0;
-    uint32_t k4 = 0;
-
-    switch (len & 15) {
-    case 15: k4 ^= static_cast<uint32_t>(tail[14]) << 16; [[fallthrough]];
-    case 14: k4 ^= static_cast<uint32_t>(tail[13]) << 8;  [[fallthrough]];
-    case 13: k4 ^= static_cast<uint32_t>(tail[12]);
-             k4 *= c4; k4 = rotl32(k4, 18); k4 *= c1; h4 ^= k4;
-             [[fallthrough]];
-    case 12: k3 ^= static_cast<uint32_t>(tail[11]) << 24; [[fallthrough]];
-    case 11: k3 ^= static_cast<uint32_t>(tail[10]) << 16; [[fallthrough]];
-    case 10: k3 ^= static_cast<uint32_t>(tail[9]) << 8;   [[fallthrough]];
-    case 9:  k3 ^= static_cast<uint32_t>(tail[8]);
-             k3 *= c3; k3 = rotl32(k3, 17); k3 *= c4; h3 ^= k3;
-             [[fallthrough]];
-    case 8:  k2 ^= static_cast<uint32_t>(tail[7]) << 24;  [[fallthrough]];
-    case 7:  k2 ^= static_cast<uint32_t>(tail[6]) << 16;  [[fallthrough]];
-    case 6:  k2 ^= static_cast<uint32_t>(tail[5]) << 8;   [[fallthrough]];
-    case 5:  k2 ^= static_cast<uint32_t>(tail[4]);
-             k2 *= c2; k2 = rotl32(k2, 16); k2 *= c3; h2 ^= k2;
-             [[fallthrough]];
-    case 4:  k1 ^= static_cast<uint32_t>(tail[3]) << 24;  [[fallthrough]];
-    case 3:  k1 ^= static_cast<uint32_t>(tail[2]) << 16;  [[fallthrough]];
-    case 2:  k1 ^= static_cast<uint32_t>(tail[1]) << 8;   [[fallthrough]];
-    case 1:  k1 ^= static_cast<uint32_t>(tail[0]);
-             k1 *= c1; k1 = rotl32(k1, 15); k1 *= c2; h1 ^= k1;
+    if (rem > 12) {
+        uint32_t k4 = tail_word32(tail, 12, rem - 12);
+        k4 *= c4; k4 = rotl32(k4, 18); k4 *= c1; h4 ^= k4;
+    }
+    if (rem > 8) {
+        uint32_t k3 = tail_word32(tail, 8, std::min(rem, size_t{12}) - 8);
+        k3 *= c3; k3 = rotl32(k3, 17); k3 *= c4; h3 ^= k3;
+    }
+    if (rem > 4) {
+        uint32_t k2 = tail_word32(tail, 4, std::min(rem, size_t{8}) - 4);
+        k2 *= c2; k2 = rotl32(k2, 16); k2 *= c3; h2 ^= k2;
+    }
+    if (rem > 0) {
+        uint32_t k1 = tail_word32(tail, 0, std::min(rem, size_t{4}));
+        k1 *= c1; k1 = rotl32(k1, 15); k1 *= c2; h1 ^= k1;
     }
 
     h1 ^= static_cast<uint32_t>(len);
@@ -221,29 +227,15 @@ void murmurhash3_x64_128(const void* key, size_t len, uint32_t seed,
     }
 
     const auto* tail = data + nblocks * 16;
+    const size_t rem = len & 15;
 
-    uint64_t k1 = 0;
-    uint64_t k2 = 0;
-
-    switch (len & 15) {
-    case 15: k2 ^= static_cast<uint64_t>(tail[14]) << 48; [[fallthrough]];
-    case 14: k2 ^= static_cast<uint64_t>(tail[13]) << 40; [[fallthrough]];
-    case 13: k2 ^= static_cast<uint64_t>(tail[12]) << 32; [[fallthrough]];
-    case 12: k2 ^= static_cast<uint64_t>(tail[11]) << 24; [[fallthrough]];
-    case 11: k2 ^= static_cast<uint64_t>(tail[10]) << 16; [[fallthrough]];
-    case 10: k2 ^= static_cast<uint64_t>(tail[9]) << 8;   [[fallthrough]];
-    case 9:  k2 ^= static_cast<uint64_t>(tail[8]);
-             k2 *= c2; k2 = rotl64(k2, 33); k2 *= c1; h2 ^= k2;
-             [[fallthrough]];
-    case 8:  k1 ^= static_cast<uint64_t>(tail[7]) << 56;  [[fallthrough]];
-    case 7:  k1 ^= static_cast<uint64_t>(tail[6]) << 48;  [[fallthrough]];
-    case 6:  k1 ^= static_cast<uint64_t>(tail[5]) << 40;  [[fallthrough]];
-    case 5:  k1 ^= static_cast<uint64_t>(tail[4]) << 32;  [[fallthrough]];
-    case 4:  k1 ^= static_cast<uint64_t>(tail[3]) << 24;  [[fallthrough]];
-    case 3:  k1 ^= static_cast<uint64_t>(tail[2]) << 16;  [[fallthrough]];
-    case 2:  k1 ^= static_cast<uint64_t>(tail[1]) << 8;   [[fallthrough]];
-    case 1:  k1 ^= static_cast<uint64_t>(tail[0]);
-             k1 *= c1; k1 = rotl64(k1, 31); k1 *= c2; h1 ^= k1;
+    if (rem > 8) {
+        uint64_t k2 = tail_word64(tail, 8, rem - 8);
+        k2 *= c2; k2 = rotl64(k2, 33); k2 *= c1; h2 ^= k2;
+    }
+    if (rem > 0) {
+        uint64_t k1 = tail_word64(tail, 0, std::min(rem, size_t{8}));
+        k1 *= c1; k1 = rotl64(k1, 31); k1 *= c2; h1 ^= k1;
     }
 
     h1 ^= static_cast<uint64_t>(len);

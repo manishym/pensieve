@@ -22,11 +22,11 @@ public:
         std::chrono::milliseconds suspect_timeout = std::chrono::milliseconds{5000};
         uint32_t indirect_ping_peers = 3;
         size_t max_piggyback_updates = 8;
+        uint16_t self_data_port = 0;
     };
 
     SwimProtocol(IoUringContext& ctx, UdpSocket& sock, MemberList& members,
-                 Disseminator& disseminator, NodeId self, Config config,
-                 uint16_t self_data_port = 0);
+                 Disseminator& disseminator, NodeId self, Config config);
 
     void run();
     void stop();
@@ -62,7 +62,6 @@ private:
     std::atomic<bool> running_{false};
     uint64_t incarnation_ = 0;
     uint32_t seq_counter_ = 0;
-    uint16_t self_data_port_ = 0;
 
     // Pending ack tracking: seq_num -> received flag
     std::unordered_map<uint32_t, bool> pending_acks_;

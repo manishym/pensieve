@@ -7,15 +7,13 @@ namespace pensieve {
 
 SwimProtocol::SwimProtocol(IoUringContext& ctx, UdpSocket& sock,
                            MemberList& members, Disseminator& disseminator,
-                           NodeId self, Config config,
-                           uint16_t self_data_port)
+                           NodeId self, Config config)
     : ctx_(ctx),
       sock_(sock),
       members_(members),
       disseminator_(disseminator),
       self_(std::move(self)),
-      config_(config),
-      self_data_port_(self_data_port) {}
+      config_(config) {}
 
 void SwimProtocol::run() {
     running_.store(true, std::memory_order_relaxed);
@@ -243,7 +241,7 @@ void SwimProtocol::apply_updates(
                 u.type == MembershipUpdate::Type::Dead) {
                 ++incarnation_;
                 disseminator_.enqueue({MembershipUpdate::Type::Alive, self_,
-                                       incarnation_, self_data_port_});
+                                       incarnation_, config_.self_data_port});
                 members_.update_state(self_, NodeState::Alive, incarnation_);
             }
             continue;

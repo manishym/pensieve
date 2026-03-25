@@ -126,8 +126,8 @@ int main(int argc, char* argv[]) {
 
     UdpSocket gossip_sock(resolved_host, gossip_port);
     SwimProtocol::Config swim_cfg;
-    SwimProtocol swim(ctx, gossip_sock, members, disseminator, self,
-                      swim_cfg, data_port);
+    swim_cfg.self_data_port = data_port;
+    SwimProtocol swim(ctx, gossip_sock, members, disseminator, self, swim_cfg);
 
     Coordinator coordinator(ctx, store, ring, members, self, &pool);
 

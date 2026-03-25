@@ -1,0 +1,115 @@
+# Pensieve 5-Node Cluster
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.5-node.yml up --build
+#
+# Clients connect to any node on ports 11211-11215:
+#   python3 deploy/client.py 127.0.0.1 11211 PUT mykey myvalue
+#   python3 deploy/client.py 127.0.0.1 11214 GET mykey
+
+x-pensieve-common: &pensieve-common
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  security_opt:
+    - seccomp:unconfined
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+
+networks:
+  pensieve-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
+services:
+  node1:
+    <<: *pensieve-common
+    container_name: pensieve-5n-node1
+    hostname: node1
+    networks:
+      pensieve-net:
+        ipv4_address: 172.31.0.11
+    ports:
+      - "11211:11211"
+    environment:
+      PENSIEVE_HOST: "172.31.0.11"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+
+  node2:
+    <<: *pensieve-common
+    container_name: pensieve-5n-node2
+    hostname: node2
+    networks:
+      pensieve-net:
+        ipv4_address: 172.31.0.12
+    ports:
+      - "11212:11211"
+    environment:
+      PENSIEVE_HOST: "172.31.0.12"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.31.0.11:7946"
+    depends_on:
+      - node1
+
+  node3:
+    <<: *pensieve-common
+    container_name: pensieve-5n-node3
+    hostname: node3
+    networks:
+      pensieve-net:
+        ipv4_address: 172.31.0.13
+    ports:
+      - "11213:11211"
+    environment:
+      PENSIEVE_HOST: "172.31.0.13"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.31.0.11:7946"
+    depends_on:
+      - node1
+
+  node4:
+    <<: *pensieve-common
+    container_name: pensieve-5n-node4
+    hostname: node4
+    networks:
+      pensieve-net:
+        ipv4_address: 172.31.0.14
+    ports:
+      - "11214:11211"
+    environment:
+      PENSIEVE_HOST: "172.31.0.14"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.31.0.11:7946"
+    depends_on:
+      - node1
+
+  node5:
+    <<: *pensieve-common
+    container_name: pensieve-5n-node5
+    hostname: node5
+    networks:
+      pensieve-net:
+        ipv4_address: 172.31.0.15
+    ports:
+      - "11215:11211"
+    environment:
+      PENSIEVE_HOST: "172.31.0.15"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.31.0.11:7946"
+    depends_on:
+      - node1

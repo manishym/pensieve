@@ -22,6 +22,7 @@ public:
         std::chrono::milliseconds suspect_timeout = std::chrono::milliseconds{5000};
         uint32_t indirect_ping_peers = 3;
         size_t max_piggyback_updates = 8;
+        uint16_t self_data_port = 0;
     };
 
     SwimProtocol(IoUringContext& ctx, UdpSocket& sock, MemberList& members,

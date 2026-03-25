@@ -63,6 +63,7 @@ void serialize_update(std::vector<uint8_t>& buf, const MembershipUpdate& u) {
     write_u8(buf, static_cast<uint8_t>(u.type));
     serialize_node_id(buf, u.node);
     write_u64(buf, u.incarnation);
+    write_u16(buf, u.data_port);
 }
 
 std::optional<MembershipUpdate> deserialize_update(std::span<const uint8_t> data,
@@ -78,10 +79,14 @@ std::optional<MembershipUpdate> deserialize_update(std::span<const uint8_t> data
     uint64_t inc;
     if (!read_u64(data, off, inc)) return std::nullopt;
 
+    uint16_t dp = 0;
+    if (!read_u16(data, off, dp)) return std::nullopt;
+
     return MembershipUpdate{
         static_cast<MembershipUpdate::Type>(type_val),
         std::move(*node),
-        inc};
+        inc,
+        dp};
 }
 
 }  // namespace

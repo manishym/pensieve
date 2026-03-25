@@ -77,12 +77,31 @@ target_link_libraries(pensieve_coordinator PUBLIC
     pensieve_io pensieve_membership pensieve_storage)
 
 # ---------------------------------------------------------------------------
+# SDK library (no io_uring dependency -- portable POSIX sockets)
+# ---------------------------------------------------------------------------
+add_library(pensieve_sdk
+    src/sdk/topology_manager.cpp
+    src/sdk/connection_pool.cpp
+    src/sdk/circuit_breaker.cpp
+    src/sdk/pensieve_client.cpp
+)
+
+target_include_directories(pensieve_sdk PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pensieve_sdk PUBLIC pensieve_hash)
+
+# ---------------------------------------------------------------------------
 # Server binary
 # ---------------------------------------------------------------------------
 add_executable(pensieve_server src/main.cpp)
 target_link_libraries(pensieve_server PRIVATE
     pensieve_coordinator pensieve_storage
     pensieve_membership pensieve_hash pensieve_io)
+
+# ---------------------------------------------------------------------------
+# CLI binary
+# ---------------------------------------------------------------------------
+add_executable(pensieve_cli src/sdk/cli.cpp)
+target_link_libraries(pensieve_cli PRIVATE pensieve_sdk)
 
 # ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
@@ -160,3 +179,21 @@ endfunction()
 pensieve_add_coordinator_test(test_protocol     tests/coordinator/test_protocol.cpp)
 pensieve_add_coordinator_test(test_wait_group   tests/coordinator/test_wait_group.cpp)
 pensieve_add_coordinator_test(test_coordinator  tests/coordinator/test_coordinator.cpp)
+
+# SDK tests
+function(pensieve_add_sdk_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE pensieve_sdk GTest::gtest_main)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+pensieve_add_sdk_test(test_circuit_breaker   tests/sdk/test_circuit_breaker.cpp)
+
+# SDK integration tests require the coordinator (for serving ClusterInfo)
+function(pensieve_add_sdk_integration_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE pensieve_sdk pensieve_coordinator GTest::gtest_main)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+pensieve_add_sdk_integration_test(test_sdk_e2e tests/sdk/test_sdk_e2e.cpp)

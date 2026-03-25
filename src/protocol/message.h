@@ -9,7 +9,7 @@
 
 namespace pensieve {
 
-enum class Opcode : uint8_t { Get = 1, Put = 2, Del = 3 };
+enum class Opcode : uint8_t { Get = 1, Put = 2, Del = 3, ClusterInfo = 4 };
 enum class Status : uint8_t { Ok = 0, NotFound = 1, Error = 2 };
 
 // On-wire layout: 8 bytes, little-endian, no padding.

@@ -1,6 +1,8 @@
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "sdk/pensieve_client.h"
 
@@ -28,6 +30,74 @@ static bool parse_seed(const std::string& seed, std::string& host,
     return true;
 }
 
+struct CmdContext {
+    pensieve::PensieveClient& client;
+    int argc;
+    char** argv;
+    int cmd_start;
+};
+
+static int cmd_get(CmdContext& ctx) {
+    if (ctx.cmd_start + 1 >= ctx.argc) {
+        std::cerr << "error: get requires KEY\n";
+        return 1;
+    }
+    auto val = ctx.client.get(ctx.argv[ctx.cmd_start + 1]);
+    if (val.has_value()) {
+        std::cout << "OK: " << *val << "\n";
+        return 0;
+    }
+    std::cout << "NOT_FOUND\n";
+    return 1;
+}
+
+static int cmd_put(CmdContext& ctx) {
+    if (ctx.cmd_start + 2 >= ctx.argc) {
+        std::cerr << "error: put requires KEY VALUE\n";
+        return 1;
+    }
+    bool ok = ctx.client.put(ctx.argv[ctx.cmd_start + 1],
+                             ctx.argv[ctx.cmd_start + 2]);
+    std::cout << (ok ? "OK" : "ERROR") << "\n";
+    return ok ? 0 : 1;
+}
+
+static int cmd_del(CmdContext& ctx) {
+    if (ctx.cmd_start + 1 >= ctx.argc) {
+        std::cerr << "error: del requires KEY\n";
+        return 1;
+    }
+    bool ok = ctx.client.del(ctx.argv[ctx.cmd_start + 1]);
+    std::cout << (ok ? "OK" : "NOT_FOUND") << "\n";
+    return ok ? 0 : 1;
+}
+
+static int cmd_info(CmdContext& ctx) {
+    std::cout << ctx.client.cluster_info();
+    return 0;
+}
+
+static int cmd_stats(CmdContext& ctx) {
+    auto s = ctx.client.stats();
+    std::cout << "requests_total:   " << s.requests_total << "\n"
+              << "requests_direct:  " << s.requests_direct << "\n"
+              << "requests_retried: " << s.requests_retried << "\n"
+              << "ring_refreshes:   " << s.ring_refreshes << "\n"
+              << "circuit_breaks:   " << s.circuit_breaks << "\n"
+              << "last_latency_us:  " << s.last_latency_us << "\n";
+    return 0;
+}
+
+using CmdHandler = std::function<int(CmdContext&)>;
+
+static const std::unordered_map<std::string, CmdHandler>& commands() {
+    static const std::unordered_map<std::string, CmdHandler> tbl = {
+        {"get", cmd_get}, {"put", cmd_put}, {"del", cmd_del},
+        {"info", cmd_info}, {"stats", cmd_stats},
+    };
+    return tbl;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 4) { usage(argv[0]); return 1; }
 
@@ -47,10 +117,7 @@ int main(int argc, char* argv[]) {
         usage(argv[0]);
         return 1;
     }
-
     if (cmd_start >= argc) { usage(argv[0]); return 1; }
-
-    std::string cmd = argv[cmd_start];
 
     pensieve::PensieveClient::Config cfg;
     if (!parse_seed(seed_str, cfg.seed_host, cfg.seed_port)) {
@@ -66,45 +133,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (cmd == "get") {
-        if (cmd_start + 1 >= argc) {
-            std::cerr << "error: get requires KEY\n"; return 1;
-        }
-        auto val = client.get(argv[cmd_start + 1]);
-        if (val.has_value()) {
-            std::cout << "OK: " << *val << "\n";
-        } else {
-            std::cout << "NOT_FOUND\n";
-            return 1;
-        }
-    } else if (cmd == "put") {
-        if (cmd_start + 2 >= argc) {
-            std::cerr << "error: put requires KEY VALUE\n"; return 1;
-        }
-        bool ok = client.put(argv[cmd_start + 1], argv[cmd_start + 2]);
-        std::cout << (ok ? "OK" : "ERROR") << "\n";
-        if (!ok) return 1;
-    } else if (cmd == "del") {
-        if (cmd_start + 1 >= argc) {
-            std::cerr << "error: del requires KEY\n"; return 1;
-        }
-        bool ok = client.del(argv[cmd_start + 1]);
-        std::cout << (ok ? "OK" : "NOT_FOUND") << "\n";
-        if (!ok) return 1;
-    } else if (cmd == "info") {
-        std::cout << client.cluster_info();
-    } else if (cmd == "stats") {
-        auto s = client.stats();
-        std::cout << "requests_total:   " << s.requests_total << "\n"
-                  << "requests_direct:  " << s.requests_direct << "\n"
-                  << "requests_retried: " << s.requests_retried << "\n"
-                  << "ring_refreshes:   " << s.ring_refreshes << "\n"
-                  << "circuit_breaks:   " << s.circuit_breaks << "\n"
-                  << "last_latency_us:  " << s.last_latency_us << "\n";
-    } else {
-        std::cerr << "error: unknown command '" << cmd << "'\n";
+    auto it = commands().find(argv[cmd_start]);
+    if (it == commands().end()) {
+        std::cerr << "error: unknown command '" << argv[cmd_start] << "'\n";
         usage(argv[0]);
         return 1;
     }
-    return 0;
+
+    CmdContext ctx{client, argc, argv, cmd_start};
+    return it->second(ctx);
 }

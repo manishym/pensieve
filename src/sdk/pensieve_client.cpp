@@ -27,6 +27,12 @@ struct PensieveClient::Impl {
           breaker({cfg.circuit_break_threshold,
                    cfg.circuit_break_duration}) {}
 
+    void on_failure(const NodeEndpoint& ep, bool& first_attempt) {
+        breaker.record_failure(ep);
+        if (first_attempt) ++requests_retried;
+        first_attempt = false;
+    }
+
     std::optional<Response> execute(Opcode op, std::string_view key,
                                     std::string_view value) {
         auto start = std::chrono::steady_clock::now();
@@ -45,9 +51,7 @@ struct PensieveClient::Impl {
 
             int fd = pool.acquire(ep);
             if (fd < 0) {
-                breaker.record_failure(ep);
-                if (first_attempt) ++requests_retried;
-                first_attempt = false;
+                on_failure(ep, first_attempt);
                 continue;
             }
 
@@ -58,18 +62,14 @@ struct PensieveClient::Impl {
 
             if (!ConnectionPool::send_request(fd, req)) {
                 pool.discard(fd);
-                breaker.record_failure(ep);
-                if (first_attempt) ++requests_retried;
-                first_attempt = false;
+                on_failure(ep, first_attempt);
                 continue;
             }
 
             auto resp = ConnectionPool::recv_response(fd);
             if (!resp.has_value()) {
                 pool.discard(fd);
-                breaker.record_failure(ep);
-                if (first_attempt) ++requests_retried;
-                first_attempt = false;
+                on_failure(ep, first_attempt);
                 continue;
             }
 
@@ -84,7 +84,6 @@ struct PensieveClient::Impl {
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         elapsed).count()));
 
-            // Stale map detection: if server returned Error, trigger refresh
             if (resp->status == Status::Error && resp->value.empty()) {
                 topo.refresh();
                 ++ring_refreshes;

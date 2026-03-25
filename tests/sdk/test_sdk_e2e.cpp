@@ -57,24 +57,16 @@ struct ServerFixture {
     std::vector<Task<>> connections;
     Task<> accept_task;
 
-    void start(uint16_t data_port_for_members) {
-        NodeInfo info;
-        info.id = self;
-        info.data_port = data_port_for_members;
-        info.state = NodeState::Alive;
-        members.add_node(info);
-        ring.add_node(self, 128);
-
-        coord = std::make_unique<Coordinator>(ctx, store, ring, members,
-                                              self);
-
+    void start(uint16_t /*unused*/) {
         listen_fd = make_listen_socket();
         port = get_bound_port(listen_fd);
 
-        // Update member info with actual port
-        members = MemberList{};
+        NodeInfo info;
+        info.id = self;
         info.data_port = port;
+        info.state = NodeState::Alive;
         members.add_node(info);
+        ring.add_node(self, 128);
 
         coord = std::make_unique<Coordinator>(ctx, store, ring, members,
                                               self);

@@ -48,7 +48,7 @@ static int cmd_get(CmdContext& ctx) {
         return 0;
     }
     std::cout << "NOT_FOUND\n";
-    return 1;
+    return 0;
 }
 
 static int cmd_put(CmdContext& ctx) {

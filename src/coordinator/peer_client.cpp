@@ -4,9 +4,44 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "io/stream_utils.h"
+
 namespace pensieve {
 
-Task<fd_t> PeerClient::connect(const std::string& host, uint16_t port) {
+PeerClient::~PeerClient() {
+    std::lock_guard lock(pool_mu_);
+    for (auto& [key, fds] : conn_pool_) {
+        for (fd_t fd : fds) ::close(fd);
+    }
+}
+
+Task<fd_t> PeerClient::acquire(const std::string& host, uint16_t port) {
+    {
+        std::lock_guard lock(pool_mu_);
+        auto it = conn_pool_.find({host, port});
+        if (it != conn_pool_.end() && !it->second.empty()) {
+            fd_t fd = it->second.front();
+            it->second.pop_front();
+            co_return fd;
+        }
+    }
+    co_return co_await open_connection(host, port);
+}
+
+void PeerClient::release(const std::string& host, uint16_t port, fd_t fd) {
+    std::lock_guard lock(pool_mu_);
+    conn_pool_[{host, port}].push_back(fd);
+}
+
+size_t PeerClient::pool_size() const {
+    std::lock_guard lock(pool_mu_);
+    size_t total = 0;
+    for (auto& [key, fds] : conn_pool_) total += fds.size();
+    return total;
+}
+
+Task<fd_t> PeerClient::open_connection(const std::string& host,
+                                       uint16_t port) {
     fd_t fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (fd < 0) co_return -1;
 
@@ -28,72 +63,46 @@ Task<fd_t> PeerClient::connect(const std::string& host, uint16_t port) {
 
 Task<Response> PeerClient::send_request(fd_t peer_fd, const Request& req) {
     auto wire = serialize_request(req);
-    if (!co_await write_all(peer_fd, wire.data(), wire.size())) {
+    if (!co_await write_all(ctx_, peer_fd, wire.data(), wire.size())) {
         co_return Response{Status::Error, {}};
     }
 
     ResponseHeader hdr{};
-    if (!co_await read_exact(peer_fd, &hdr, sizeof(hdr))) {
+    if (!co_await read_exact(ctx_, peer_fd, &hdr, sizeof(hdr))) {
         co_return Response{Status::Error, {}};
     }
 
     std::string value;
     if (hdr.value_len > 0) {
-        if (pool_) {
-            // Zero-copy path: read into registered buffer, then copy out.
-            // The buffer stays registered for the kernel transfer, avoiding
-            // an extra kernel→userspace copy on large payloads.
-            auto handle = pool_->acquire();
+        if (buf_pool_) {
+            auto handle = buf_pool_->acquire();
             if (handle && handle->size >= hdr.value_len) {
-                if (!co_await read_exact(peer_fd, handle->data,
+                if (!co_await read_exact(ctx_, peer_fd, handle->data,
                                          hdr.value_len)) {
-                    pool_->release(handle->index);
+                    buf_pool_->release(handle->index);
                     co_return Response{Status::Error, {}};
                 }
                 value.assign(reinterpret_cast<const char*>(handle->data),
                              hdr.value_len);
-                pool_->release(handle->index);
+                buf_pool_->release(handle->index);
             } else {
-                if (handle) pool_->release(handle->index);
+                if (handle) buf_pool_->release(handle->index);
                 value.resize(hdr.value_len);
-                if (!co_await read_exact(peer_fd, value.data(),
+                if (!co_await read_exact(ctx_, peer_fd, value.data(),
                                          hdr.value_len)) {
                     co_return Response{Status::Error, {}};
                 }
             }
         } else {
             value.resize(hdr.value_len);
-            if (!co_await read_exact(peer_fd, value.data(), hdr.value_len)) {
+            if (!co_await read_exact(ctx_, peer_fd, value.data(),
+                                     hdr.value_len)) {
                 co_return Response{Status::Error, {}};
             }
         }
     }
 
     co_return Response{hdr.status, std::move(value)};
-}
-
-Task<bool> PeerClient::read_exact(fd_t fd, void* buf, size_t len) {
-    auto* dst = static_cast<uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        int32_t n = co_await async_read(ctx_, fd, dst, remaining);
-        if (n <= 0) co_return false;
-        dst += n;
-        remaining -= static_cast<size_t>(n);
-    }
-    co_return true;
-}
-
-Task<bool> PeerClient::write_all(fd_t fd, const void* buf, size_t len) {
-    auto* src = static_cast<const uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        int32_t n = co_await async_write(ctx_, fd, src, remaining);
-        if (n <= 0) co_return false;
-        src += n;
-        remaining -= static_cast<size_t>(n);
-    }
-    co_return true;
 }
 
 }  // namespace pensieve

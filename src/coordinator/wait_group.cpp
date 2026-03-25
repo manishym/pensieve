@@ -2,31 +2,33 @@
 
 namespace pensieve {
 
-bool WaitGroup::try_join(const std::string& key) {
+WaitGroup::JoinResult WaitGroup::try_join(const std::string& key) {
     std::lock_guard lock(mu_);
     auto [it, inserted] = pending_.emplace(
         key, std::make_shared<PendingFetch>());
-    return inserted;
+    return {inserted, it->second};
 }
 
-WaitGroup::WaitAwaitable WaitGroup::wait(const std::string& key) {
-    return WaitAwaitable(*this, key);
+WaitGroup::WaitAwaitable WaitGroup::wait(FetchHandle fetch) {
+    return WaitAwaitable(std::move(fetch));
 }
 
 void WaitGroup::complete(const std::string& key,
                          std::optional<std::string> value) {
-    std::shared_ptr<PendingFetch> fetch;
+    FetchHandle fetch;
     std::vector<std::coroutine_handle<>> to_resume;
     {
         std::lock_guard lock(mu_);
         auto it = pending_.find(key);
         if (it == pending_.end()) return;
-
         fetch = it->second;
+        pending_.erase(it);
+    }
+    {
+        std::lock_guard lock(fetch->mu);
         fetch->result = std::move(value);
         fetch->completed = true;
         to_resume.swap(fetch->waiters);
-        pending_.erase(it);
     }
 
     for (auto h : to_resume) {
@@ -39,23 +41,19 @@ size_t WaitGroup::pending_count() const {
     return pending_.size();
 }
 
-// WaitAwaitable implementation
+bool WaitGroup::WaitAwaitable::await_ready() const noexcept {
+    return fetch_->completed;
+}
 
 bool WaitGroup::WaitAwaitable::await_suspend(std::coroutine_handle<> h) {
-    std::lock_guard lock(wg_.mu_);
-    auto it = wg_.pending_.find(key_);
-    if (it == wg_.pending_.end() || it->second->completed) {
-        fetch_ = (it != wg_.pending_.end()) ? it->second : nullptr;
-        return false;
-    }
-    fetch_ = it->second;
+    std::lock_guard lock(fetch_->mu);
+    if (fetch_->completed) return false;
     fetch_->waiters.push_back(h);
     return true;
 }
 
 std::optional<std::string> WaitGroup::WaitAwaitable::await_resume() {
-    if (fetch_) return fetch_->result;
-    return std::nullopt;
+    return fetch_->result;
 }
 
 }  // namespace pensieve

@@ -13,21 +13,28 @@ using namespace pensieve;
 
 TEST(WaitGroup, InitiatorJoinsFirst) {
     WaitGroup wg;
-    EXPECT_TRUE(wg.try_join("key1"));
+    auto [is_init, handle] = wg.try_join("key1");
+    EXPECT_TRUE(is_init);
     EXPECT_EQ(wg.pending_count(), 1u);
 }
 
 TEST(WaitGroup, SecondJoinReturnsFalse) {
     WaitGroup wg;
-    EXPECT_TRUE(wg.try_join("key1"));
-    EXPECT_FALSE(wg.try_join("key1"));
+    auto [init1, h1] = wg.try_join("key1");
+    auto [init2, h2] = wg.try_join("key1");
+    EXPECT_TRUE(init1);
+    EXPECT_FALSE(init2);
     EXPECT_EQ(wg.pending_count(), 1u);
+    EXPECT_EQ(h1, h2);
 }
 
 TEST(WaitGroup, DifferentKeysAreIndependent) {
     WaitGroup wg;
-    EXPECT_TRUE(wg.try_join("a"));
-    EXPECT_TRUE(wg.try_join("b"));
+    auto [a_init, ha] = wg.try_join("a");
+    auto [b_init, hb] = wg.try_join("b");
+    EXPECT_TRUE(a_init);
+    EXPECT_TRUE(b_init);
+    EXPECT_NE(ha, hb);
     EXPECT_EQ(wg.pending_count(), 2u);
 }
 
@@ -49,10 +56,13 @@ TEST(WaitGroup, WaiterGetsResult) {
     WaitGroup wg;
     std::optional<std::string> waiter_result;
 
-    wg.try_join("key1");
+    auto [init1, h1] = wg.try_join("key1");
+    ASSERT_TRUE(init1);
+    auto [init2, h2] = wg.try_join("key1");
+    ASSERT_FALSE(init2);
 
     auto waiter_coro = [&]() -> Task<> {
-        waiter_result = co_await wg.wait("key1");
+        waiter_result = co_await wg.wait(h2);
         ctx.stop();
     };
 
@@ -79,18 +89,24 @@ TEST(WaitGroup, MultipleWaitersGetResult) {
     std::atomic<int> received{0};
     std::vector<std::optional<std::string>> results(kWaiters);
 
-    wg.try_join("key1");
+    auto [init_flag, init_handle] = wg.try_join("key1");
+    ASSERT_TRUE(init_flag);
 
-    // Lambda must outlive all coroutines created from it because the
-    // coroutine frame stores a this-pointer into the lambda object.
-    auto make_waiter = [&](int i) -> Task<> {
-        results[i] = co_await wg.wait("key1");
+    std::vector<WaitGroup::FetchHandle> handles;
+    for (int i = 0; i < kWaiters; ++i) {
+        auto [is_init, h] = wg.try_join("key1");
+        ASSERT_FALSE(is_init);
+        handles.push_back(h);
+    }
+
+    auto make_waiter = [&](int i, WaitGroup::FetchHandle h) -> Task<> {
+        results[i] = co_await wg.wait(std::move(h));
         if (++received >= kWaiters) ctx.stop();
     };
 
     std::vector<Task<>> tasks;
     for (int i = 0; i < kWaiters; ++i) {
-        tasks.push_back(make_waiter(i));
+        tasks.push_back(make_waiter(i, handles[i]));
     }
 
     auto initiator_coro = [&]() -> Task<> {
@@ -116,10 +132,11 @@ TEST(WaitGroup, WaiterGetsNulloptOnMiss) {
     std::optional<std::string> waiter_result;
     bool waiter_ran = false;
 
-    wg.try_join("key1");
+    auto [init1, h1] = wg.try_join("key1");
+    auto [init2, h2] = wg.try_join("key1");
 
     auto waiter_coro = [&]() -> Task<> {
-        waiter_result = co_await wg.wait("key1");
+        waiter_result = co_await wg.wait(h2);
         waiter_ran = true;
         ctx.stop();
     };
@@ -141,8 +158,32 @@ TEST(WaitGroup, WaiterGetsNulloptOnMiss) {
 
 TEST(WaitGroup, RejoinAfterComplete) {
     WaitGroup wg;
-    EXPECT_TRUE(wg.try_join("key1"));
+    auto [init1, h1] = wg.try_join("key1");
+    EXPECT_TRUE(init1);
     wg.complete("key1", "v1");
-    EXPECT_TRUE(wg.try_join("key1"));
+    auto [init2, h2] = wg.try_join("key1");
+    EXPECT_TRUE(init2);
     EXPECT_EQ(wg.pending_count(), 1u);
+}
+
+TEST(WaitGroup, HandleSurvivesMapErasure) {
+    // Verify the race condition fix: the handle remains valid even after
+    // complete() erases the entry from the pending map.
+    WaitGroup wg;
+
+    auto [init1, h1] = wg.try_join("key1");
+    auto [init2, h2] = wg.try_join("key1");
+    ASSERT_FALSE(init2);
+
+    // Simulate the race: complete before the waiter co_awaits.
+    wg.complete("key1", "raced_value");
+    EXPECT_EQ(wg.pending_count(), 0u);
+
+    // The handle should still carry the result even though
+    // complete() erased the map entry.
+    auto awaitable = wg.wait(h2);
+    EXPECT_TRUE(awaitable.await_ready());
+    auto result = awaitable.await_resume();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, "raced_value");
 }

@@ -1,9 +1,9 @@
 #include "coordinator/coordinator.h"
 
 #include <cstring>
-#include <unistd.h>
 
 #include "hash/hasher.h"
+#include "io/stream_utils.h"
 
 namespace pensieve {
 
@@ -21,13 +21,14 @@ Coordinator::Coordinator(IoUringContext& ctx, LocalStore& store,
 Task<> Coordinator::handle_connection(fd_t client_fd) {
     while (true) {
         RequestHeader hdr{};
-        if (!co_await read_exact(client_fd, &hdr, sizeof(hdr))) break;
+        if (!co_await read_exact(ctx_, client_fd, &hdr, sizeof(hdr))) break;
 
         size_t payload_len =
             static_cast<size_t>(hdr.key_len) + hdr.value_len;
         std::vector<uint8_t> payload(payload_len);
         if (payload_len > 0 &&
-            !co_await read_exact(client_fd, payload.data(), payload_len)) {
+            !co_await read_exact(ctx_, client_fd, payload.data(),
+                                 payload_len)) {
             break;
         }
 
@@ -49,7 +50,8 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
             resp = co_await serve_local(req);
         } else {
             if (req.opcode == Opcode::Get) {
-                bool is_initiator = wait_group_.try_join(req.key);
+                auto [is_initiator, handle] =
+                    wait_group_.try_join(req.key);
                 if (is_initiator) {
                     resp = co_await proxy_to_peer(req, *owner);
                     wait_group_.complete(
@@ -58,7 +60,8 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
                             ? std::optional(resp.value)
                             : std::nullopt);
                 } else {
-                    auto result = co_await wait_group_.wait(req.key);
+                    auto result =
+                        co_await wait_group_.wait(std::move(handle));
                     if (result.has_value()) {
                         resp = {Status::Ok, std::move(*result)};
                     } else {
@@ -103,39 +106,19 @@ Task<Response> Coordinator::proxy_to_peer(const Request& req,
         co_return Response{Status::Error, {}};
     }
 
-    fd_t peer_fd = co_await peer_client_.connect(owner.host,
+    fd_t peer_fd = co_await peer_client_.acquire(owner.host,
                                                   info->data_port);
     if (peer_fd < 0) {
         co_return Response{Status::Error, {}};
     }
 
     Response resp = co_await peer_client_.send_request(peer_fd, req);
-    co_await async_close(ctx_, peer_fd);
+    if (resp.status == Status::Error) {
+        co_await async_close(ctx_, peer_fd);
+    } else {
+        peer_client_.release(owner.host, info->data_port, peer_fd);
+    }
     co_return resp;
-}
-
-Task<bool> Coordinator::read_exact(fd_t fd, void* buf, size_t len) {
-    auto* dst = static_cast<uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        int32_t n = co_await async_read(ctx_, fd, dst, remaining);
-        if (n <= 0) co_return false;
-        dst += n;
-        remaining -= static_cast<size_t>(n);
-    }
-    co_return true;
-}
-
-Task<bool> Coordinator::write_all(fd_t fd, const void* buf, size_t len) {
-    auto* src = static_cast<const uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        int32_t n = co_await async_write(ctx_, fd, src, remaining);
-        if (n <= 0) co_return false;
-        src += n;
-        remaining -= static_cast<size_t>(n);
-    }
-    co_return true;
 }
 
 Task<bool> Coordinator::write_response(fd_t client_fd, const Response& resp) {
@@ -145,7 +128,8 @@ Task<bool> Coordinator::write_response(fd_t client_fd, const Response& resp) {
     hdr.reserved  = 0;
     hdr.value_len = static_cast<uint32_t>(resp.value.size());
 
-    if (!co_await write_all(client_fd, &hdr, sizeof(hdr))) co_return false;
+    if (!co_await write_all(ctx_, client_fd, &hdr, sizeof(hdr)))
+        co_return false;
 
     if (resp.value.empty()) co_return true;
 
@@ -162,7 +146,7 @@ Task<bool> Coordinator::write_response(fd_t client_fd, const Response& resp) {
         if (handle) pool_->release(handle->index);
     }
 
-    co_return co_await write_all(client_fd, resp.value.data(),
+    co_return co_await write_all(ctx_, client_fd, resp.value.data(),
                                   resp.value.size());
 }
 

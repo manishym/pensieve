@@ -17,36 +17,42 @@ namespace pensieve {
 class WaitGroup {
 public:
     struct PendingFetch {
+        std::mutex mu;
         std::vector<std::coroutine_handle<>> waiters;
         std::optional<std::string> result;
         bool completed = false;
     };
 
-    // Returns true if the caller is the initiator (first request for this key).
-    // Returns false if another fetch is already in-flight — the caller must
-    // then co_await wait(key) to get the result.
-    bool try_join(const std::string& key);
+    using FetchHandle = std::shared_ptr<PendingFetch>;
 
-    // Awaitable that suspends the caller until the initiator calls complete().
+    struct JoinResult {
+        bool is_initiator;
+        FetchHandle handle;
+    };
+
+    // Atomically join the wait group for a key.  Returns a handle that the
+    // caller must hold.  If is_initiator is true, the caller performs the
+    // actual fetch and must call complete().  Otherwise, the caller passes
+    // the handle to co_await wait(handle).
+    JoinResult try_join(const std::string& key);
+
+    // Awaitable that suspends until the initiator calls complete().
+    // Operates directly on the FetchHandle -- no map lookup required,
+    // eliminating the TOCTOU race between try_join and wait.
     class WaitAwaitable {
     public:
-        WaitAwaitable(WaitGroup& wg, const std::string& key)
-            : wg_(wg), key_(key) {}
+        explicit WaitAwaitable(FetchHandle fetch)
+            : fetch_(std::move(fetch)) {}
 
-        bool await_ready() const noexcept { return false; }
-
-        // Returns true to suspend, false to continue immediately.
+        bool await_ready() const noexcept;
         bool await_suspend(std::coroutine_handle<> h);
-
         std::optional<std::string> await_resume();
 
     private:
-        WaitGroup& wg_;
-        std::string key_;
-        std::shared_ptr<PendingFetch> fetch_;
+        FetchHandle fetch_;
     };
 
-    WaitAwaitable wait(const std::string& key);
+    WaitAwaitable wait(FetchHandle fetch);
 
     // Called by the initiator when the fetch completes.  Resumes all waiting
     // coroutines with the result.
@@ -56,7 +62,7 @@ public:
 
 private:
     mutable std::mutex mu_;
-    std::unordered_map<std::string, std::shared_ptr<PendingFetch>> pending_;
+    std::unordered_map<std::string, FetchHandle> pending_;
 };
 
 }  // namespace pensieve

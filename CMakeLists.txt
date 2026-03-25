@@ -52,6 +52,18 @@ target_include_directories(pensieve_membership PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pensieve_membership PUBLIC pensieve_io pensieve_hash)
 
 # ---------------------------------------------------------------------------
+# Storage library
+# ---------------------------------------------------------------------------
+add_library(pensieve_storage
+    src/storage/slab_allocator.cpp
+    src/storage/local_store.cpp
+    src/storage/clock_evictor.cpp
+)
+
+target_include_directories(pensieve_storage PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pensieve_storage PUBLIC pensieve_hash)
+
+# ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
 # ---------------------------------------------------------------------------
 include(FetchContent)
@@ -104,3 +116,15 @@ pensieve_add_hash_test(test_murmurhash3     tests/hash/test_murmurhash3.cpp)
 pensieve_add_hash_test(test_hasher          tests/hash/test_hasher.cpp)
 pensieve_add_hash_test(test_virtual_nodes   tests/hash/test_virtual_nodes.cpp)
 pensieve_add_hash_test(test_ring_lookup     tests/hash/test_ring_lookup.cpp)
+
+# Storage tests
+function(pensieve_add_storage_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE pensieve_storage GTest::gtest_main)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+pensieve_add_storage_test(test_slab_allocator  tests/storage/test_slab_allocator.cpp)
+pensieve_add_storage_test(test_local_store     tests/storage/test_local_store.cpp)
+pensieve_add_storage_test(test_clock_evictor   tests/storage/test_clock_evictor.cpp)
+pensieve_add_storage_test(test_cache_line      tests/storage/test_cache_line.cpp)

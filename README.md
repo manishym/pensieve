@@ -142,12 +142,37 @@ See the full [Wire Protocol Reference](docs/wire-protocol.md) for implementation
 
 ---
 
+## Docker Compose
+
+Run a full cluster locally with Docker Compose:
+
+```bash
+# 3-node cluster
+docker compose -f deploy/docker-compose.3-node.yml up --build
+
+# 5-node cluster
+docker compose -f deploy/docker-compose.5-node.yml up --build
+```
+
+Test it with the included Python client:
+
+```bash
+python3 deploy/client.py 127.0.0.1 11211 PUT hello world
+python3 deploy/client.py 127.0.0.1 11212 GET hello    # proxied via node2
+python3 deploy/client.py 127.0.0.1 11213 GET hello    # proxied via node3
+```
+
+See [`deploy/README.md`](deploy/README.md) for details.
+
+---
+
 ## Documentation
 
 | Document | Description |
 | :--- | :--- |
 | [Deployment Guide](docs/deployment.md) | Build, configure, deploy, form a cluster, operate |
 | [Wire Protocol Reference](docs/wire-protocol.md) | Binary protocol spec with Python and Bash client examples |
+| [Docker Deployments](deploy/README.md) | Docker Compose configurations for 3-node and 5-node clusters |
 | [Architecture](docs/architecture.md) | Design document covering all system components |
 | [Epics & Stories](docs/epics.md) | Development roadmap and feature breakdown |
 

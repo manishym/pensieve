@@ -54,119 +54,28 @@ All 25 test suites should pass. Tests exercise every layer from raw `io_uring` o
 
 ---
 
-## Writing a Server Entry Point
+## Server Binary
 
-Pensieve ships as a set of composable libraries. To run a node you write a short `main.cpp` that wires the components together. Below is a complete, production-ready example.
-
-### `src/main.cpp`
-
-```cpp
-#include <csignal>
-#include <cstdlib>
-#include <iostream>
-#include <string>
-
-#include "common/types.h"
-#include "coordinator/coordinator.h"
-#include "io/awaitable.h"
-#include "io/buffer_pool.h"
-#include "io/io_uring_context.h"
-#include "io/task.h"
-#include "io/tcp_listener.h"
-#include "io/udp_socket.h"
-#include "membership/disseminator.h"
-#include "membership/member_list.h"
-#include "membership/node_info.h"
-#include "membership/ring_store.h"
-#include "membership/swim_protocol.h"
-#include "storage/local_store.h"
-
-using namespace pensieve;
-
-static IoUringContext* g_ctx = nullptr;
-
-void signal_handler(int) {
-    if (g_ctx) g_ctx->stop();
-}
-
-int main(int argc, char* argv[]) {
-    std::string host       = argc > 1 ? argv[1] : "0.0.0.0";
-    uint16_t data_port     = argc > 2 ? uint16_t(std::atoi(argv[2])) : 11211;
-    uint16_t gossip_port   = argc > 3 ? uint16_t(std::atoi(argv[3])) : 7946;
-    size_t   memory_mb     = argc > 4 ? std::stoul(argv[4]) : 256;
-    std::string seed_host  = argc > 5 ? argv[5] : "";
-    uint16_t seed_gport    = argc > 6 ? uint16_t(std::atoi(argv[6])) : 7946;
-
-    IoUringContext ctx(1024);
-    g_ctx = &ctx;
-    std::signal(SIGINT,  signal_handler);
-    std::signal(SIGTERM, signal_handler);
-
-    BufferPool pool(ctx, 65536, 64);
-    LocalStore store(memory_mb * 1024 * 1024, 16);
-
-    NodeId self{host, gossip_port};
-    MemberList members;
-    RingStore ring;
-    Disseminator disseminator(members);
-
-    NodeInfo self_info;
-    self_info.id = self;
-    self_info.data_port = data_port;
-    self_info.state = NodeState::Alive;
-    members.add_node(self_info);
-    ring.add_node(self);
-
-    if (!seed_host.empty()) {
-        NodeId seed{seed_host, seed_gport};
-        NodeInfo seed_info;
-        seed_info.id = seed;
-        seed_info.state = NodeState::Alive;
-        members.add_node(seed_info);
-        ring.add_node(seed);
-    }
-
-    UdpSocket gossip_sock(ctx, host, gossip_port);
-    SwimProtocol::Config swim_cfg;
-    SwimProtocol swim(ctx, gossip_sock, members, disseminator,
-                      self, swim_cfg);
-
-    Coordinator coordinator(ctx, store, ring, members, self, &pool);
-
-    TcpListener listener(ctx, host, data_port);
-    listener.start([&](TcpConnection conn) {
-        auto task = coordinator.handle_connection(conn.release_fd());
-        task.start();
-    });
-
-    swim.run();
-    std::cout << "pensieve listening on " << host
-              << " data=" << data_port
-              << " gossip=" << gossip_port
-              << " memory=" << memory_mb << "MB\n";
-    ctx.run();
-
-    swim.stop();
-    return 0;
-}
-```
-
-### Building with the server binary
-
-Add to your `CMakeLists.txt`:
-
-```cmake
-add_executable(pensieve_server src/main.cpp)
-target_link_libraries(pensieve_server PRIVATE
-    pensieve_coordinator pensieve_storage
-    pensieve_membership pensieve_hash pensieve_io)
-```
-
-Then rebuild:
+The repository includes `src/main.cpp`, a production-ready server entry point. It is built automatically as `pensieve_server`:
 
 ```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
+ls build/pensieve_server
 ```
+
+The server reads configuration from environment variables (for Docker/container use) with CLI argument fallbacks:
+
+| Variable | CLI arg | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `PENSIEVE_HOST` | `$1` | `0.0.0.0` | Bind address / node identity |
+| `PENSIEVE_DATA_PORT` | `$2` | `11211` | TCP data port |
+| `PENSIEVE_GOSSIP_PORT` | `$3` | `7946` | UDP gossip port |
+| `PENSIEVE_MEMORY_MB` | `$4` | `64` | Slab allocator size in MB |
+| `PENSIEVE_SEED` | `$5` | (none) | Seed node as `host:gossip_port` |
+| `PENSIEVE_SEED_DATA_PORT` | - | same as data_port | Seed node's data port |
+
+Hostnames are automatically resolved to IPv4 addresses.
 
 ---
 
@@ -335,3 +244,20 @@ This is an alpha release. Known limitations:
 | **Client libraries** | No official client SDKs. Clients implement the binary wire protocol directly. |
 
 See the [Wire Protocol Reference](wire-protocol.md) for details on building a client.
+
+---
+
+## Docker Compose Deployments
+
+Pre-built Docker Compose configurations are provided in the `deploy/` directory for 3-node and 5-node clusters. See [`deploy/README.md`](../deploy/README.md) for full instructions.
+
+Quick start:
+
+```bash
+# Build and start a 3-node cluster
+docker compose -f deploy/docker-compose.3-node.yml up --build
+
+# In another terminal, test it
+python3 deploy/client.py 127.0.0.1 11211 PUT hello world
+python3 deploy/client.py 127.0.0.1 11212 GET hello
+```

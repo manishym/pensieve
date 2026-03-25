@@ -25,7 +25,8 @@ public:
     };
 
     SwimProtocol(IoUringContext& ctx, UdpSocket& sock, MemberList& members,
-                 Disseminator& disseminator, NodeId self, Config config);
+                 Disseminator& disseminator, NodeId self, Config config,
+                 uint16_t self_data_port = 0);
 
     void run();
     void stop();
@@ -61,6 +62,7 @@ private:
     std::atomic<bool> running_{false};
     uint64_t incarnation_ = 0;
     uint32_t seq_counter_ = 0;
+    uint16_t self_data_port_ = 0;
 
     // Pending ack tracking: seq_num -> received flag
     std::unordered_map<uint32_t, bool> pending_acks_;

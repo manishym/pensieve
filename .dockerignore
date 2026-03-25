@@ -1,0 +1,9 @@
+build/
+.git/
+.github/
+deploy/
+docs/
+*.md
+.dockerignore
+.gitignore
+.cursor/

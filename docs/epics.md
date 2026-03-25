@@ -8,7 +8,7 @@
 * **Story 1.3: Registered Buffer Pool** Implement a fixed memory pool using `IORING_REGISTER_BUFFERS` to enable zero-copy data transfers between the kernel and userspace.
 * **Story 1.4: Coroutine Integration** Develop C++20 `awaitable` types to wrap `io_uring` operations, allowing linear code flow for complex async I/O.
 
----
+---gco 
 
 ## Epic 2: Decentralized Membership (SWIM Gossip)
 **Goal:** Implement a platform-agnostic, peer-to-peer discovery model to manage the cluster state without a central master.
@@ -46,3 +46,51 @@
 * **Story 5.1: Async Coordinator State Machine** Implement the logic to initiate an outbound `connect` and `send` to a peer if the hashed key is remote.
 * **Story 5.2: Zero-Copy Proxying** Utilize reference-counted buffers so that data read from a Peer can be piped to a Client-Write without intermediate userspace copying.
 * **Story 5.3: Request Collapsing (Wait Groups)** Implement a "Thundering Herd" protection layer: if $N$ requests arrive for the same missing key, only one upstream fetch is performed.
+
+# Epic 6: The Smart SDK (Pensieve Client)
+
+**Goal:** Develop a high-performance, ring-aware client library that enables $O(1)$ routing, connection pooling, and transparent failover without relying on server-side proxying.
+
+---
+
+## 6.1: Membership & Topology Discovery
+The SDK must "learn" the cluster layout to make intelligent routing decisions.
+
+* **Story 6.1.1: Bootstrap Logic:** Implement an initial connection phase where the SDK contacts a "Seed" node to fetch the current Hash Ring state.
+* **Story 6.1.2: Ring Synchronization:** Create a background thread (or async task) that periodically refreshes the local `std::map<uint32_t, NodeInfo>` to detect new nodes or departures.
+* **Story 6.1.3: Serialization Parity:** Implement a binary parser for the cluster metadata to ensure the SDK interprets the `VirtualNode` distribution exactly as the server intended.
+
+---
+
+## 6.2: Client-Side Consistent Hashing
+The SDK must replicate the server's placement logic to ensure it hits the "Owner" node on the first try.
+
+* **Story 6.2.1: Hashing Alignment:** Integrate `MurmurHash3` (or the chosen algorithm) with identical seeding and 64-bit/128-bit parity to the server implementation.
+* **Story 6.2.2: Local Lookup Engine:** Implement the `find_node(key)` function using `std::map::lower_bound` to resolve keys to physical node IPs locally.
+* **Story 6.2.3: Virtual Node Support:** Ensure the client correctly maps the 128/256 virtual points per node to prevent load imbalance.
+
+---
+
+## 6.3: Connection Pooling & I/O Efficiency
+To match the performance of the `io_uring` backend, the SDK must avoid the overhead of constant TCP handshakes.
+
+* **Story 6.3.1: Persistent Connection Pool:** Implement a thread-safe pool of TCP connections indexed by Node ID. Use "Keep-Alive" to reuse sockets for multiple requests.
+* **Story 6.3.2: Non-Blocking I/O:** Build the SDK using asynchronous primitives (e.g., `std::future`, `asio`, or raw non-blocking sockets) so the calling application isn't stalled by network latency.
+* **Story 6.3.3: Request Pipelining:** Allow the SDK to send multiple requests over a single connection without waiting for the previous response (Head-of-Line blocking mitigation).
+
+---
+
+## 6.4: Fault Tolerance & Self-Healing
+The SDK acts as the first line of defense against cluster instability.
+
+* **Story 6.4.1: Retries & Successor Fallback:** If the primary owner node returns a connection error, the SDK must automatically attempt the request on the "Next-Clockwise" node in the ring.
+* **Story 6.4.2: Stale Map Detection:** Handle `MOVED` or `NOT_MY_KEY` errors from the server by immediately triggering a ring refresh and re-routing the request.
+* **Story 6.4.3: Circuit Breaking:** Implement a mechanism to "blacklist" a failing node for $N$ seconds to prevent the application from constantly timing out on a dead peer.
+
+---
+
+## 6.5: Developer Experience (DX) & Observability
+The SDK should be easy to integrate and monitor.
+
+* **Story 6.5.1: The Pensieve CLI:** Create a command-line tool (e.g., `pensieve-cli`) that uses the SDK to perform `PUT`, `GET`, and `DELETE` operations for debugging.
+* **Story 6.5.2: Telemetry:** Export key metrics such as `local_hash_time`, `network_latency_p99`, and `ring_out_of_sync_count`.

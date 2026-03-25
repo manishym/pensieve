@@ -7,13 +7,15 @@ namespace pensieve {
 
 SwimProtocol::SwimProtocol(IoUringContext& ctx, UdpSocket& sock,
                            MemberList& members, Disseminator& disseminator,
-                           NodeId self, Config config)
+                           NodeId self, Config config,
+                           uint16_t self_data_port)
     : ctx_(ctx),
       sock_(sock),
       members_(members),
       disseminator_(disseminator),
       self_(std::move(self)),
-      config_(config) {}
+      config_(config),
+      self_data_port_(self_data_port) {}
 
 void SwimProtocol::run() {
     running_.store(true, std::memory_order_relaxed);
@@ -143,6 +145,25 @@ Task<bool> SwimProtocol::indirect_ping(const NodeId& target) {
 
 void SwimProtocol::handle_message(const SwimMessage& msg,
                                   const sockaddr_in& from) {
+    // If the sender is unknown, add it and propagate via disseminator
+    // so other peers learn about this node transitively.
+    if (msg.sender != self_ && !members_.get_node(msg.sender).has_value()) {
+        uint16_t dp = 0;
+        for (const auto& u : msg.updates) {
+            if (u.node == msg.sender && u.data_port != 0) {
+                dp = u.data_port;
+                break;
+            }
+        }
+        NodeInfo info;
+        info.id = msg.sender;
+        info.data_port = dp;
+        info.state = NodeState::Alive;
+        members_.add_node(info);
+        disseminator_.enqueue({MembershipUpdate::Type::Join, msg.sender,
+                               0, dp});
+    }
+
     apply_updates(msg.updates);
 
     switch (msg.type) {
@@ -222,7 +243,7 @@ void SwimProtocol::apply_updates(
                 u.type == MembershipUpdate::Type::Dead) {
                 ++incarnation_;
                 disseminator_.enqueue({MembershipUpdate::Type::Alive, self_,
-                                       incarnation_});
+                                       incarnation_, self_data_port_});
                 members_.update_state(self_, NodeState::Alive, incarnation_);
             }
             continue;
@@ -245,11 +266,13 @@ void SwimProtocol::apply_updates(
             break;
         }
 
-        if (u.type == MembershipUpdate::Type::Join) {
+        if (u.type == MembershipUpdate::Type::Join ||
+            u.type == MembershipUpdate::Type::Alive) {
             NodeInfo info;
             info.id = u.node;
             info.state = NodeState::Alive;
             info.incarnation = u.incarnation;
+            info.data_port = u.data_port;
             members_.add_node(info);
         } else {
             members_.update_state(u.node, new_state, u.incarnation);

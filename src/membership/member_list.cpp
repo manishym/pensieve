@@ -11,16 +11,27 @@ bool MemberList::add_node(const NodeInfo& info) {
             (info.incarnation == it->second.incarnation &&
              state_supersedes(info.state, it->second.state))) {
             it->second = info;
+            notify(info.id);
             return true;
         }
         return false;
     }
     nodes_.emplace(info.id, info);
+    notify(info.id);
     return true;
 }
 
 bool MemberList::remove_node(const NodeId& id) {
-    return nodes_.erase(id) > 0;
+    if (nodes_.erase(id) > 0) {
+        if (on_change_) {
+            NodeInfo removed;
+            removed.id = id;
+            removed.state = NodeState::Dead;
+            on_change_(id, removed);
+        }
+        return true;
+    }
+    return false;
 }
 
 bool MemberList::update_state(const NodeId& id, NodeState new_state,
@@ -33,14 +44,25 @@ bool MemberList::update_state(const NodeId& id, NodeState new_state,
         n.state = new_state;
         n.incarnation = incarnation;
         n.last_state_change = std::chrono::steady_clock::now();
+        notify(id);
         return true;
     }
     if (incarnation == n.incarnation && state_supersedes(new_state, n.state)) {
         n.state = new_state;
         n.last_state_change = std::chrono::steady_clock::now();
+        notify(id);
         return true;
     }
     return false;
+}
+
+void MemberList::notify(const NodeId& id) {
+    if (on_change_) {
+        auto it = nodes_.find(id);
+        if (it != nodes_.end()) {
+            on_change_(id, it->second);
+        }
+    }
 }
 
 std::optional<NodeInfo> MemberList::get_node(const NodeId& id) const {

@@ -77,6 +77,14 @@ target_link_libraries(pensieve_coordinator PUBLIC
     pensieve_io pensieve_membership pensieve_storage)
 
 # ---------------------------------------------------------------------------
+# Server binary
+# ---------------------------------------------------------------------------
+add_executable(pensieve_server src/main.cpp)
+target_link_libraries(pensieve_server PRIVATE
+    pensieve_coordinator pensieve_storage
+    pensieve_membership pensieve_hash pensieve_io)
+
+# ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
 # ---------------------------------------------------------------------------
 include(FetchContent)

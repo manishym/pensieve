@@ -24,6 +24,7 @@ struct MembershipUpdate {
     Type type;
     NodeId node;
     uint64_t incarnation = 0;
+    uint16_t data_port = 0;
 };
 
 struct SwimMessage {

@@ -42,6 +42,12 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
                 hdr.value_len);
         }
 
+        if (req.opcode == Opcode::ClusterInfo) {
+            auto resp = serve_cluster_info();
+            if (!co_await write_response(client_fd, resp)) break;
+            continue;
+        }
+
         uint32_t hash = hash_key(req.key);
         auto owner = ring_.get_node_for_key(hash);
 
@@ -97,6 +103,39 @@ Task<Response> Coordinator::serve_local(const Request& req) {
         }
     }
     co_return Response{Status::Error, {}};
+}
+
+Response Coordinator::serve_cluster_info() {
+    const auto& nodes = members_.all_nodes();
+
+    std::string buf;
+    uint16_t count = 0;
+    for (const auto& [id, info] : nodes) {
+        if (info.state == NodeState::Alive) ++count;
+    }
+
+    buf.resize(sizeof(uint16_t));
+    std::memcpy(buf.data(), &count, sizeof(count));
+
+    for (const auto& [id, info] : nodes) {
+        if (info.state != NodeState::Alive) continue;
+
+        uint16_t host_len = static_cast<uint16_t>(id.host.size());
+        size_t off = buf.size();
+        buf.resize(off + sizeof(host_len) + host_len +
+                   sizeof(id.gossip_port) + sizeof(info.data_port));
+
+        auto* p = buf.data() + off;
+        std::memcpy(p, &host_len, sizeof(host_len));
+        p += sizeof(host_len);
+        std::memcpy(p, id.host.data(), host_len);
+        p += host_len;
+        std::memcpy(p, &id.gossip_port, sizeof(id.gossip_port));
+        p += sizeof(id.gossip_port);
+        std::memcpy(p, &info.data_port, sizeof(info.data_port));
+    }
+
+    return {Status::Ok, std::move(buf)};
 }
 
 Task<Response> Coordinator::proxy_to_peer(const Request& req,

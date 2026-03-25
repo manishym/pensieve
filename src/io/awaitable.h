@@ -223,6 +223,17 @@ inline TimeoutAwaitable async_timeout(IoUringContext& ctx,
     return TimeoutAwaitable(ctx, ms);
 }
 
+// ---- TCP connect ------------------------------------------------------------
+
+inline IoAwaitable async_connect(IoUringContext& ctx, fd_t fd,
+                                 const sockaddr_in& addr) {
+    return IoAwaitable(ctx, [fd, addr](io_uring_sqe* sqe) {
+        io_uring_prep_connect(sqe, fd,
+                              reinterpret_cast<const sockaddr*>(&addr),
+                              sizeof(addr));
+    });
+}
+
 // ---- Cancel a pending SQE by its user_data pointer --------------------------
 
 inline IoAwaitable async_cancel(IoUringContext& ctx, void* user_data) {

@@ -64,6 +64,19 @@ target_include_directories(pensieve_storage PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pensieve_storage PUBLIC pensieve_hash)
 
 # ---------------------------------------------------------------------------
+# Coordinator library
+# ---------------------------------------------------------------------------
+add_library(pensieve_coordinator
+    src/coordinator/coordinator.cpp
+    src/coordinator/peer_client.cpp
+    src/coordinator/wait_group.cpp
+)
+
+target_include_directories(pensieve_coordinator PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pensieve_coordinator PUBLIC
+    pensieve_io pensieve_membership pensieve_storage)
+
+# ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
 # ---------------------------------------------------------------------------
 include(FetchContent)
@@ -128,3 +141,14 @@ pensieve_add_storage_test(test_slab_allocator  tests/storage/test_slab_allocator
 pensieve_add_storage_test(test_local_store     tests/storage/test_local_store.cpp)
 pensieve_add_storage_test(test_clock_evictor   tests/storage/test_clock_evictor.cpp)
 pensieve_add_storage_test(test_cache_line      tests/storage/test_cache_line.cpp)
+
+# Coordinator tests
+function(pensieve_add_coordinator_test name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE pensieve_coordinator GTest::gtest_main)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+pensieve_add_coordinator_test(test_protocol     tests/coordinator/test_protocol.cpp)
+pensieve_add_coordinator_test(test_wait_group   tests/coordinator/test_wait_group.cpp)
+pensieve_add_coordinator_test(test_coordinator  tests/coordinator/test_coordinator.cpp)

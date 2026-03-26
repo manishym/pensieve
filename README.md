@@ -173,6 +173,8 @@ See [`deploy/README.md`](deploy/README.md) for details.
 | [Deployment Guide](docs/deployment.md) | Build, configure, deploy, form a cluster, operate |
 | [Wire Protocol Reference](docs/wire-protocol.md) | Binary protocol spec with Python and Bash client examples |
 | [Docker Deployments](deploy/README.md) | Docker Compose configurations for 3-node and 5-node clusters |
+| [Benchmark (Bridge)](deploy/docker-compose.bench-bridge.yml) | 3-node cluster + 3 bench clients over Docker bridge network |
+| [Benchmark (Host)](deploy/docker-compose.bench-host.yml) | 3-node cluster + 3 bench clients over host network |
 | [Architecture](docs/architecture.md) | Design document covering all system components |
 | [Epics & Stories](docs/epics.md) | Development roadmap and feature breakdown |
 
@@ -225,13 +227,53 @@ docs/
 
 ---
 
+## Benchmark Results
+
+Measured on an AMD Ryzen 5 2600X (6C/12T) desktop with a **3-node cluster** and **3 benchmark clients** (4 threads each, 12 total). Each client PUT then GET 1,000,000 keys (32-byte values). Server nodes pinned to CPUs 3-5, clients to CPUs 2, 6, 7.
+
+### Consolidated Throughput
+
+| Metric | Docker Bridge | Host Network |
+| :--- | ---: | ---: |
+| **PUT ops/sec** | 106,263 | 123,826 |
+| **GET ops/sec** | 109,763 | 127,959 |
+| **Total keys** | 3,000,000 | 3,000,000 |
+| **Errors** | 0 | 0 |
+
+### Latency (worst-case across clients)
+
+| Percentile | Bridge PUT | Bridge GET | Host PUT | Host GET |
+| :--- | ---: | ---: | ---: | ---: |
+| **p50** | 105 us | 103 us | 89 us | 88 us |
+| **p95** | 203 us | 189 us | 171 us | 161 us |
+| **p99** | 253 us | 235 us | 212 us | 199 us |
+| **max** | 8,186 us | 3,141 us | 8,428 us | 4,166 us |
+
+> Host networking eliminates the Docker bridge/NAT layer, improving throughput by ~17% and reducing p99 latency by ~16%.
+
+### Run benchmarks yourself
+
+```bash
+# Bridge network
+docker compose -f deploy/docker-compose.bench-bridge.yml down -v
+docker compose -f deploy/docker-compose.bench-bridge.yml up --build
+
+# Host network (lower latency)
+docker compose -f deploy/docker-compose.bench-host.yml down -v
+docker compose -f deploy/docker-compose.bench-host.yml up --build
+```
+
+A consolidator container automatically merges results from all clients after the run completes.
+
+---
+
 ## Alpha Limitations
 
 - **In-memory only** -- no persistence, data lost on restart
 - **No replication** -- node failure loses its partition
 - **No auth/TLS** -- deploy behind a private network
 - **1 MB max value** -- largest slab class
-- **No official client SDKs** -- implement the binary protocol directly
+- **C++ SDK only** -- no bindings for other languages yet
 
 ---
 

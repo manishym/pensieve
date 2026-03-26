@@ -1,14 +1,15 @@
-# Pensieve 3-Node Cluster + Multi-Client Benchmark with Consolidator
+# Pensieve 3-Node Cluster + Multi-Client Benchmark (Host Network)
 #
-# Host networking — no bridge/NAT overhead.
-# Each node uses unique ports since they share the host network stack.
+# Uses --network host to eliminate bridge/NAT overhead.
+# Each node binds unique ports since they share the host network stack.
 #
 #   node1: data=11211  gossip=7946
 #   node2: data=11212  gossip=7947
 #   node3: data=11213  gossip=7948
 #
 # Usage:
-#   docker compose -f deploy/docker-compose.bench.yml up --build
+#   docker compose -f deploy/docker-compose.bench-host.yml down -v
+#   docker compose -f deploy/docker-compose.bench-host.yml up --build
 
 x-pensieve-common: &pensieve-common
   build:

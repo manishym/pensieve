@@ -1,0 +1,524 @@
+Compose can now delegate builds to bake for better performance.
+ To do so, set COMPOSE_BAKE=true.
+#0 building with "default" instance using docker driver
+
+#1 [node1 internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.16kB done
+#1 DONE 0.0s
+
+#2 [node1 internal] load metadata for docker.io/library/ubuntu:24.04
+#2 DONE 0.0s
+
+#3 [node1 internal] load .dockerignore
+#3 transferring context: 115B done
+#3 DONE 0.0s
+
+#4 [node1 builder 1/7] FROM docker.io/library/ubuntu:24.04
+#4 DONE 0.0s
+
+#5 [node1 internal] load build context
+#5 transferring context: 4.49kB 0.0s done
+#5 DONE 0.0s
+
+#6 [node1 stage-1 2/3] RUN apt-get update && apt-get install -y --no-install-recommends         liburing2     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [node1 builder 6/7] COPY tests/ tests/
+#7 CACHED
+
+#8 [node1 builder 4/7] COPY CMakeLists.txt ./
+#8 CACHED
+
+#9 [node1 builder 7/7] RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"     && cmake --build build -j$(nproc) --target pensieve_server
+#9 CACHED
+
+#10 [node1 builder 5/7] COPY src/ src/
+#10 CACHED
+
+#11 [node1 builder 3/7] WORKDIR /src
+#11 CACHED
+
+#12 [node1 builder 2/7] RUN apt-get update && apt-get install -y --no-install-recommends         build-essential cmake pkg-config liburing-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [node1 stage-1 3/3] COPY --from=builder /src/build/pensieve_server /usr/local/bin/pensieve_server
+#13 CACHED
+
+#14 [node1] exporting to image
+#14 exporting layers done
+#14 writing image sha256:67f8d84c83ad39f09c9aa33bcedbb7e4530c949a538c48857d693b747bef9148 done
+#14 naming to docker.io/library/deploy-node1 done
+#14 DONE 0.0s
+
+#15 [node1] resolving provenance for metadata file
+#15 DONE 0.0s
+
+#16 [node3 internal] load build definition from Dockerfile
+#16 transferring dockerfile: 1.16kB done
+#16 DONE 0.0s
+
+#17 [node2 internal] load build definition from Dockerfile
+#17 transferring dockerfile: 1.16kB done
+#17 DONE 0.0s
+
+#2 [node2 internal] load metadata for docker.io/library/ubuntu:24.04
+#2 DONE 0.0s
+
+#18 [node3 internal] load .dockerignore
+#18 transferring context: 115B done
+#18 DONE 0.0s
+
+#19 [node2 internal] load .dockerignore
+#19 transferring context: 115B done
+#19 DONE 0.0s
+
+#4 [node2 builder 1/7] FROM docker.io/library/ubuntu:24.04
+#4 DONE 0.0s
+
+#20 [node3 internal] load build context
+#20 transferring context: 4.49kB 0.0s done
+#20 DONE 0.0s
+
+#21 [node2 internal] load build context
+#21 transferring context: 4.49kB done
+#21 DONE 0.0s
+
+#22 [node3 builder 7/7] RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"     && cmake --build build -j$(nproc) --target pensieve_server
+#22 CACHED
+
+#23 [node3 builder 6/7] COPY tests/ tests/
+#23 CACHED
+
+#12 [node3 builder 2/7] RUN apt-get update && apt-get install -y --no-install-recommends         build-essential cmake pkg-config liburing-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#11 [node3 builder 3/7] WORKDIR /src
+#11 CACHED
+
+#24 [node3 builder 4/7] COPY CMakeLists.txt ./
+#24 CACHED
+
+#25 [node3 builder 5/7] COPY src/ src/
+#25 CACHED
+
+#6 [node2 stage-1 2/3] RUN apt-get update && apt-get install -y --no-install-recommends         liburing2     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#26 [node2 stage-1 3/3] COPY --from=builder /src/build/pensieve_server /usr/local/bin/pensieve_server
+#26 CACHED
+
+#27 [node3] exporting to image
+#27 exporting layers done
+#27 writing image sha256:744322961e469efecfd9f1130d0bbaec4a4fadad5037298d2d0dc52677ecf774 done
+#27 naming to docker.io/library/deploy-node3 0.0s done
+#27 DONE 0.0s
+
+#28 [node2] exporting to image
+#28 exporting layers done
+#28 writing image sha256:ee35a0263ae61585b6c3857cc9bc59235961ef7bfefd21a2f20979979a73bef6 done
+#28 naming to docker.io/library/deploy-node2 done
+#28 DONE 0.0s
+
+#29 [node3] resolving provenance for metadata file
+#29 DONE 0.0s
+
+#30 [node2] resolving provenance for metadata file
+#30 DONE 0.0s
+
+#31 [bench3 internal] load build definition from Dockerfile.bench
+#31 transferring dockerfile: 847B done
+#31 DONE 0.0s
+
+#2 [bench3 internal] load metadata for docker.io/library/ubuntu:24.04
+#2 DONE 0.0s
+
+#32 [bench3 internal] load .dockerignore
+#32 transferring context: 115B done
+#32 DONE 0.0s
+
+#33 [bench1 internal] load build definition from Dockerfile.bench
+#33 transferring dockerfile: 847B done
+#33 DONE 0.0s
+
+#34 [bench2 internal] load build definition from Dockerfile.bench
+#34 transferring dockerfile: 847B done
+#34 DONE 0.0s
+
+#2 [bench2 internal] load metadata for docker.io/library/ubuntu:24.04
+#2 DONE 0.0s
+
+#4 [bench2 builder 1/7] FROM docker.io/library/ubuntu:24.04
+#4 DONE 0.0s
+
+#35 [bench1 internal] load .dockerignore
+#35 transferring context: 115B done
+#35 DONE 0.0s
+
+#36 [bench2 internal] load .dockerignore
+#36 transferring context: 115B done
+#36 DONE 0.0s
+
+#37 [bench3 internal] load build context
+#37 transferring context: 4.49kB 0.0s done
+#37 DONE 0.0s
+
+#38 [bench2 internal] load build context
+#38 transferring context: 4.49kB done
+#38 DONE 0.0s
+
+#11 [bench3 builder 3/7] WORKDIR /src
+#11 CACHED
+
+#39 [bench3 builder 5/7] COPY src/ src/
+#39 CACHED
+
+#12 [bench3 builder 2/7] RUN apt-get update && apt-get install -y --no-install-recommends         build-essential cmake pkg-config liburing-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#40 [bench3 builder 4/7] COPY CMakeLists.txt ./
+#40 CACHED
+
+#41 [bench3 builder 6/7] COPY tests/ tests/
+#41 CACHED
+
+#42 [bench3 builder 7/7] RUN cmake -B build -DCMAKE_BUILD_TYPE=Release         -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"     && cmake --build build -j$(nproc) --target pensieve_bench
+#42 CACHED
+
+#43 [bench2 stage-1 2/2] COPY --from=builder /src/build/pensieve_bench /usr/local/bin/pensieve_bench
+#43 CACHED
+
+#44 [bench1 internal] load build context
+#44 transferring context: 4.49kB done
+#44 DONE 0.0s
+
+#45 [bench3] exporting to image
+#45 exporting layers done
+#45 writing image sha256:d5ed403647b8a679e24ba6b0ec8cd21fe4fe85361234ae4b4ba0ff7bf9880042 done
+#45 naming to docker.io/library/deploy-bench3 done
+#45 DONE 0.0s
+
+#46 [bench1] exporting to image
+#46 exporting layers done
+#46 writing image sha256:51234b16a2d70a8c35a88965f90a9f0bcf9aa720692aa7db4ed92fff88ff2143 done
+#46 naming to docker.io/library/deploy-bench1 0.0s done
+#46 DONE 0.0s
+
+#47 [bench2] exporting to image
+#47 exporting layers done
+#47 writing image sha256:9bd855cc9eaa8be1c0a3be8a5e8376249a99462b2be3cbf8d42c664d20071786 0.0s done
+#47 naming to docker.io/library/deploy-bench2 done
+#47 DONE 0.0s
+
+#48 [bench3] resolving provenance for metadata file
+#48 DONE 0.0s
+
+#49 [bench1] resolving provenance for metadata file
+#49 DONE 0.0s
+
+#50 [bench2] resolving provenance for metadata file
+#50 DONE 0.0s
+ bench1  Built
+ bench2  Built
+ bench3  Built
+ node1  Built
+ node2  Built
+ node3  Built
+ Network deploy_pensieve-net  Creating
+ Network deploy_pensieve-net  Created
+ Network deploy_default  Creating
+ Network deploy_default  Created
+ Volume "deploy_bench-results"  Creating
+ Volume "deploy_bench-results"  Created
+ Container pensieve-node1  Creating
+ Container pensieve-node1  Created
+ Container pensieve-node3  Creating
+ Container pensieve-node2  Creating
+ Container pensieve-node3  Created
+ Container pensieve-node2  Created
+ Container pensieve-bench2  Creating
+ Container pensieve-bench3  Creating
+ Container pensieve-bench1  Creating
+ Container pensieve-bench3  Created
+ Container pensieve-bench1  Created
+ Container pensieve-bench2  Created
+ Container pensieve-consolidator  Creating
+ Container pensieve-consolidator  Created
+Attaching to pensieve-bench1, pensieve-bench2, pensieve-bench3, pensieve-consolidator, pensieve-node1, pensieve-node2, pensieve-node3
+pensieve-bench2        | Waiting 5s for cluster convergence...
+pensieve-bench3        | Waiting 5s for cluster convergence...
+pensieve-bench1        | Waiting 5s for cluster convergence...
+pensieve-bench2        | Pensieve Benchmark
+pensieve-bench2        |   seed:       172.30.0.12:11211
+pensieve-bench2        |   num_keys:   1000000
+pensieve-bench2        |   value_size: 32 bytes
+pensieve-bench2        |   threads:    4
+pensieve-bench2        | 
+pensieve-bench2        | Cluster: 3 node(s)
+pensieve-bench2        |   172.30.0.13:11211 (gossip 7946)
+pensieve-bench2        |   172.30.0.11:11211 (gossip 7946)
+pensieve-bench2        |   172.30.0.12:11211 (gossip 7946)
+pensieve-bench3        | Pensieve Benchmark
+pensieve-bench3        |   seed:       172.30.0.13:11211
+pensieve-bench3        |   num_keys:   1000000
+pensieve-bench3        |   value_size: 32 bytes
+pensieve-bench3        |   threads:    4
+pensieve-bench3        | 
+pensieve-bench3        | Cluster: 3 node(s)
+pensieve-bench3        |   172.30.0.12:11211 (gossip 7946)
+pensieve-bench3        |   172.30.0.11:11211 (gossip 7946)
+pensieve-bench3        |   172.30.0.13:11211 (gossip 7946)
+pensieve-bench1        | Pensieve Benchmark
+pensieve-bench1        |   seed:       172.30.0.11:11211
+pensieve-bench1        |   num_keys:   1000000
+pensieve-bench1        |   value_size: 32 bytes
+pensieve-bench1        |   threads:    4
+pensieve-bench1        | 
+pensieve-bench1        | Cluster: 3 node(s)
+pensieve-bench1        |   172.30.0.13:11211 (gossip 7946)
+pensieve-bench1        |   172.30.0.12:11211 (gossip 7946)
+pensieve-bench1        |   172.30.0.11:11211 (gossip 7946)
+pensieve-bench2        | --- Phase 1: PUT 1000000 keys (4 threads) ---
+pensieve-bench3        | --- Phase 1: PUT 1000000 keys (4 threads) ---
+pensieve-bench1        | --- Phase 1: PUT 1000000 keys (4 threads) ---
+pensieve-bench1        | 
+pensieve-bench1        | ===== PUT =====
+pensieve-bench1        |   Total ops:    1000000
+pensieve-bench1        |   Errors:       0
+pensieve-bench1        |   Elapsed:      27.628 s
+pensieve-bench1        |   Throughput:   36195 ops/sec
+pensieve-bench1        |   p50:          98 us
+pensieve-bench1        |   p95:          199 us
+pensieve-bench1        |   p99:          250 us
+pensieve-bench1        |   min:          37 us
+pensieve-bench1        |   max:          8186 us
+pensieve-bench1        | 
+pensieve-bench1        |   Latency distribution:
+pensieve-bench1        |       < 50us  |#### 56457 (5.6%)
+pensieve-bench1        |       < 100us |###################################### 456057 (45.6%)
+pensieve-bench1        |       < 250us |######################################## 477419 (47.7%)
+pensieve-bench1        |       < 500us | 9222 (0.9%)
+pensieve-bench1        |       <   1ms | 390 (0.0%)
+pensieve-bench1        |       <   5ms | 453 (0.0%)
+pensieve-bench1        |       <  10ms | 2 (0.0%)
+pensieve-bench1        |       <  50ms | 0 (0.0%)
+pensieve-bench1        |       < 100ms | 0 (0.0%)
+pensieve-bench1        |       >= 100ms | 0 (0.0%)
+pensieve-bench1        | 
+pensieve-bench1        | --- Phase 2: GET 1000000 keys (4 threads) ---
+pensieve-bench3        | 
+pensieve-bench3        | ===== PUT =====
+pensieve-bench3        |   Total ops:    1000000
+pensieve-bench3        |   Errors:       0
+pensieve-bench3        |   Elapsed:      27.822 s
+pensieve-bench3        |   Throughput:   35943 ops/sec
+pensieve-bench3        |   p50:          98 us
+pensieve-bench3        |   p95:          199 us
+pensieve-bench3        |   p99:          250 us
+pensieve-bench3        |   min:          37 us
+pensieve-bench3        |   max:          8130 us
+pensieve-bench3        | 
+pensieve-bench3        |   Latency distribution:
+pensieve-bench3        |       < 50us  |#### 51662 (5.2%)
+pensieve-bench3        |       < 100us |###################################### 457043 (45.7%)
+pensieve-bench3        |       < 250us |######################################## 481097 (48.1%)
+pensieve-bench3        |       < 500us | 9355 (0.9%)
+pensieve-bench3        |       <   1ms | 383 (0.0%)
+pensieve-bench3        |       <   5ms | 459 (0.0%)
+pensieve-bench3        |       <  10ms | 1 (0.0%)
+pensieve-bench3        |       <  50ms | 0 (0.0%)
+pensieve-bench3        |       < 100ms | 0 (0.0%)
+pensieve-bench3        |       >= 100ms | 0 (0.0%)
+pensieve-bench3        | 
+pensieve-bench3        | --- Phase 2: GET 1000000 keys (4 threads) ---
+pensieve-bench2        | 
+pensieve-bench2        | ===== PUT =====
+pensieve-bench2        |   Total ops:    1000000
+pensieve-bench2        |   Errors:       0
+pensieve-bench2        |   Elapsed:      29.305 s
+pensieve-bench2        |   Throughput:   34124 ops/sec
+pensieve-bench2        |   p50:          105 us
+pensieve-bench2        |   p95:          203 us
+pensieve-bench2        |   p99:          253 us
+pensieve-bench2        |   min:          38 us
+pensieve-bench2        |   max:          8142 us
+pensieve-bench2        | 
+pensieve-bench2        |   Latency distribution:
+pensieve-bench2        |       < 50us  |# 16526 (1.7%)
+pensieve-bench2        |       < 100us |############################### 430115 (43.0%)
+pensieve-bench2        |       < 250us |######################################## 542328 (54.2%)
+pensieve-bench2        |       < 500us | 10189 (1.0%)
+pensieve-bench2        |       <   1ms | 397 (0.0%)
+pensieve-bench2        |       <   5ms | 442 (0.0%)
+pensieve-bench2        |       <  10ms | 3 (0.0%)
+pensieve-bench2        |       <  50ms | 0 (0.0%)
+pensieve-bench2        |       < 100ms | 0 (0.0%)
+pensieve-bench2        |       >= 100ms | 0 (0.0%)
+pensieve-bench2        | 
+pensieve-bench2        | --- Phase 2: GET 1000000 keys (4 threads) ---
+pensieve-bench1        | 
+pensieve-bench1        | ===== GET =====
+pensieve-bench1        |   Total ops:    1000000
+pensieve-bench1        |   Errors:       0
+pensieve-bench1        |   Elapsed:      26.728 s
+pensieve-bench1        |   Throughput:   37414 ops/sec
+pensieve-bench1        |   p50:          96 us
+pensieve-bench1        |   p95:          186 us
+pensieve-bench1        |   p99:          232 us
+pensieve-bench1        |   min:          38 us
+pensieve-bench1        |   max:          3141 us
+pensieve-bench1        | 
+pensieve-bench1        |   Latency distribution:
+pensieve-bench1        |       < 50us  |#### 49638 (5.0%)
+pensieve-bench1        |       < 100us |######################################## 483965 (48.4%)
+pensieve-bench1        |       < 250us |###################################### 460999 (46.1%)
+pensieve-bench1        |       < 500us | 5056 (0.5%)
+pensieve-bench1        |       <   1ms | 199 (0.0%)
+pensieve-bench1        |       <   5ms | 143 (0.0%)
+pensieve-bench1        |       <  10ms | 0 (0.0%)
+pensieve-bench1        |       <  50ms | 0 (0.0%)
+pensieve-bench1        |       < 100ms | 0 (0.0%)
+pensieve-bench1        |       >= 100ms | 0 (0.0%)
+pensieve-bench1        | 
+pensieve-bench1        | ===== SDK Stats =====
+pensieve-bench1        |   requests_total:   0
+pensieve-bench1        |   requests_direct:  0
+pensieve-bench1        |   requests_retried: 0
+pensieve-bench1        |   ring_refreshes:   0
+pensieve-bench1        |   circuit_breaks:   0
+pensieve-bench1        | Results written to /results/bench1.json
+pensieve-bench1        | 
+pensieve-bench1        | Done.
+pensieve-bench3        | 
+pensieve-bench3        | ===== GET =====
+pensieve-bench3        |   Total ops:    1000000
+pensieve-bench3        |   Errors:       0
+pensieve-bench3        |   Elapsed:      26.910 s
+pensieve-bench3        |   Throughput:   37161 ops/sec
+pensieve-bench3        |   p50:          97 us
+pensieve-bench3        |   p95:          187 us
+pensieve-bench3        |   p99:          232 us
+pensieve-bench3        |   min:          38 us
+pensieve-bench3        |   max:          2776 us
+pensieve-bench3        | 
+pensieve-bench3        |   Latency distribution:
+pensieve-bench3        |       < 50us  |### 45515 (4.6%)
+pensieve-bench3        |       < 100us |######################################## 481742 (48.2%)
+pensieve-bench3        |       < 250us |###################################### 467332 (46.7%)
+pensieve-bench3        |       < 500us | 5053 (0.5%)
+pensieve-bench3        |       <   1ms | 225 (0.0%)
+pensieve-bench3        |       <   5ms | 133 (0.0%)
+pensieve-bench3        |       <  10ms | 0 (0.0%)
+pensieve-bench3        |       <  50ms | 0 (0.0%)
+pensieve-bench3        |       < 100ms | 0 (0.0%)
+pensieve-bench3        |       >= 100ms | 0 (0.0%)
+pensieve-bench3        | 
+pensieve-bench3        | ===== SDK Stats =====
+pensieve-bench3        |   requests_total:   0
+pensieve-bench3        |   requests_direct:  0
+pensieve-bench3        |   requests_retried: 0
+pensieve-bench3        |   ring_refreshes:   0
+pensieve-bench3        |   circuit_breaks:   0
+pensieve-bench3        | Results written to /results/bench3.json
+pensieve-bench3        | 
+pensieve-bench3        | Done.
+[Kpensieve-bench1 exited with code 0
+[Kpensieve-bench3 exited with code 0
+pensieve-bench2        | 
+pensieve-bench2        | ===== GET =====
+pensieve-bench2        |   Total ops:    1000000
+pensieve-bench2        |   Errors:       0
+pensieve-bench2        |   Elapsed:      28.419 s
+pensieve-bench2        |   Throughput:   35188 ops/sec
+pensieve-bench2        |   p50:          103 us
+pensieve-bench2        |   p95:          189 us
+pensieve-bench2        |   p99:          235 us
+pensieve-bench2        |   min:          40 us
+pensieve-bench2        |   max:          2682 us
+pensieve-bench2        | 
+pensieve-bench2        |   Latency distribution:
+pensieve-bench2        |       < 50us  | 11185 (1.1%)
+pensieve-bench2        |       < 100us |########################### 398040 (39.8%)
+pensieve-bench2        |       < 250us |######################################## 584740 (58.5%)
+pensieve-bench2        |       < 500us | 5581 (0.6%)
+pensieve-bench2        |       <   1ms | 286 (0.0%)
+pensieve-bench2        |       <   5ms | 168 (0.0%)
+pensieve-bench2        |       <  10ms | 0 (0.0%)
+pensieve-bench2        |       <  50ms | 0 (0.0%)
+pensieve-bench2        |       < 100ms | 0 (0.0%)
+pensieve-bench2        |       >= 100ms | 0 (0.0%)
+pensieve-bench2        | 
+pensieve-bench2        | ===== SDK Stats =====
+pensieve-bench2        |   requests_total:   0
+pensieve-bench2        |   requests_direct:  0
+pensieve-bench2        |   requests_retried: 0
+pensieve-bench2        |   ring_refreshes:   0
+pensieve-bench2        |   circuit_breaks:   0
+pensieve-bench2        | Results written to /results/bench2.json
+pensieve-bench2        | 
+pensieve-bench2        | Done.
+[Kpensieve-bench2 exited with code 0
+pensieve-consolidator  | [consolidator] waiting for 3 result files in /results...
+pensieve-consolidator  | [consolidator] found 3/3 result files...
+pensieve-consolidator  | [consolidator] loaded /results/bench1.json
+pensieve-consolidator  | [consolidator] loaded /results/bench2.json
+pensieve-consolidator  | [consolidator] loaded /results/bench3.json
+pensieve-consolidator  | 
+pensieve-consolidator  | ============================================================
+pensieve-consolidator  |   CONSOLIDATED BENCHMARK REPORT
+pensieve-consolidator  | ============================================================
+pensieve-consolidator  |   Clients:        3
+pensieve-consolidator  |   Total threads:  12
+pensieve-consolidator  |   Total keys:     3000000
+pensieve-consolidator  | 
+pensieve-consolidator  | ===== PUT (consolidated) =====
+pensieve-consolidator  |   Total ops:    3000000
+pensieve-consolidator  |   Errors:       0
+pensieve-consolidator  |   Elapsed:      29.305 s (slowest client)
+pensieve-consolidator  |   Throughput:   106263 ops/sec (sum)
+pensieve-consolidator  |   p50:          105 us (max across clients)
+pensieve-consolidator  |   p95:          203 us (max across clients)
+pensieve-consolidator  |   p99:          253 us (max across clients)
+pensieve-consolidator  |   min:          37 us
+pensieve-consolidator  |   max:          8186 us
+pensieve-consolidator  | 
+pensieve-consolidator  |   Latency distribution:
+pensieve-consolidator  |       < 50us  |### 124645 (4.2%)
+pensieve-consolidator  |       < 100us |################################### 1343215 (44.8%)
+pensieve-consolidator  |       < 250us |######################################## 1500844 (50.0%)
+pensieve-consolidator  |       < 500us | 28766 (1.0%)
+pensieve-consolidator  |       <   1ms | 1170 (0.0%)
+pensieve-consolidator  |       <   5ms | 1354 (0.0%)
+pensieve-consolidator  |       <  10ms | 6 (0.0%)
+pensieve-consolidator  |       <  50ms | 0 (0.0%)
+pensieve-consolidator  |       < 100ms | 0 (0.0%)
+pensieve-consolidator  |       >= 100ms | 0 (0.0%)
+pensieve-consolidator  | 
+pensieve-consolidator  | ===== GET (consolidated) =====
+pensieve-consolidator  |   Total ops:    3000000
+pensieve-consolidator  |   Errors:       0
+pensieve-consolidator  |   Elapsed:      28.419 s (slowest client)
+pensieve-consolidator  |   Throughput:   109763 ops/sec (sum)
+pensieve-consolidator  |   p50:          103 us (max across clients)
+pensieve-consolidator  |   p95:          189 us (max across clients)
+pensieve-consolidator  |   p99:          235 us (max across clients)
+pensieve-consolidator  |   min:          38 us
+pensieve-consolidator  |   max:          3141 us
+pensieve-consolidator  | 
+pensieve-consolidator  |   Latency distribution:
+pensieve-consolidator  |       < 50us  |## 106338 (3.5%)
+pensieve-consolidator  |       < 100us |#################################### 1363747 (45.5%)
+pensieve-consolidator  |       < 250us |######################################## 1513071 (50.4%)
+pensieve-consolidator  |       < 500us | 15690 (0.5%)
+pensieve-consolidator  |       <   1ms | 710 (0.0%)
+pensieve-consolidator  |       <   5ms | 444 (0.0%)
+pensieve-consolidator  |       <  10ms | 0 (0.0%)
+pensieve-consolidator  |       <  50ms | 0 (0.0%)
+pensieve-consolidator  |       < 100ms | 0 (0.0%)
+pensieve-consolidator  |       >= 100ms | 0 (0.0%)
+pensieve-consolidator  | 
+pensieve-consolidator  | --- Per-Client Summary ---
+pensieve-consolidator  |   bench1.json: PUT 36195 ops/s, GET 37414 ops/s
+pensieve-consolidator  |   bench2.json: PUT 34124 ops/s, GET 35188 ops/s
+pensieve-consolidator  |   bench3.json: PUT 35943 ops/s, GET 37161 ops/s
+pensieve-consolidator  | 
+[Kpensieve-consolidator exited with code 0

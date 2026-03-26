@@ -1,6 +1,7 @@
 #include "coordinator/peer_client.h"
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -44,6 +45,9 @@ Task<fd_t> PeerClient::open_connection(const std::string& host,
                                        uint16_t port) {
     fd_t fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (fd < 0) co_return -1;
+
+    int flag = 1;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;

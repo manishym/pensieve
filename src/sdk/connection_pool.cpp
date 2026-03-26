@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -22,6 +23,9 @@ int tcp_connect(const std::string& host, uint16_t port) {
     int fd = socket(result->ai_family, result->ai_socktype,
                     result->ai_protocol);
     if (fd < 0) { freeaddrinfo(result); return -1; }
+
+    int flag = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
     if (connect(fd, result->ai_addr, result->ai_addrlen) < 0) {
         close(fd);
@@ -96,19 +100,8 @@ void ConnectionPool::discard(int fd) {
 }
 
 bool ConnectionPool::send_request(int fd, const Request& req) {
-    RequestHeader hdr{};
-    hdr.opcode = req.opcode;
-    hdr.flags = 0;
-    hdr.key_len = static_cast<uint16_t>(req.key.size());
-    hdr.value_len = static_cast<uint32_t>(req.value.size());
-
-    if (!send_all(fd, &hdr, sizeof(hdr))) return false;
-    if (!req.key.empty() && !send_all(fd, req.key.data(), req.key.size()))
-        return false;
-    if (!req.value.empty() &&
-        !send_all(fd, req.value.data(), req.value.size()))
-        return false;
-    return true;
+    auto wire = serialize_request(req);
+    return send_all(fd, wire.data(), wire.size());
 }
 
 std::optional<Response> ConnectionPool::recv_response(int fd) {

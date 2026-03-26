@@ -1,0 +1,96 @@
+# Pensieve 3-Node Cluster + Benchmark
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.bench.yml up --build
+#
+# Override benchmark parameters:
+#   docker compose -f deploy/docker-compose.bench.yml run bench \
+#       --seed 172.30.0.11:11211 --num-keys 50000 --value-size 256
+
+x-pensieve-common: &pensieve-common
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  security_opt:
+    - seccomp:unconfined
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+
+networks:
+  pensieve-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+services:
+  node1:
+    <<: *pensieve-common
+    container_name: pensieve-node1
+    hostname: node1
+    networks:
+      pensieve-net:
+        ipv4_address: 172.30.0.11
+    environment:
+      PENSIEVE_HOST: "172.30.0.11"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+
+  node2:
+    <<: *pensieve-common
+    container_name: pensieve-node2
+    hostname: node2
+    networks:
+      pensieve-net:
+        ipv4_address: 172.30.0.12
+    environment:
+      PENSIEVE_HOST: "172.30.0.12"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.30.0.11:7946"
+    depends_on:
+      - node1
+
+  node3:
+    <<: *pensieve-common
+    container_name: pensieve-node3
+    hostname: node3
+    networks:
+      pensieve-net:
+        ipv4_address: 172.30.0.13
+    environment:
+      PENSIEVE_HOST: "172.30.0.13"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "172.30.0.11:7946"
+    depends_on:
+      - node1
+
+  bench:
+    build:
+      context: ..
+      dockerfile: Dockerfile.bench
+    container_name: pensieve-bench
+    hostname: bench
+    networks:
+      pensieve-net:
+        ipv4_address: 172.30.0.20
+    depends_on:
+      - node1
+      - node2
+      - node3
+    command:
+      - "--seed"
+      - "172.30.0.11:11211"
+      - "--num-keys"
+      - "10000"
+      - "--value-size"
+      - "128"
+      - "--wait"
+      - "5"

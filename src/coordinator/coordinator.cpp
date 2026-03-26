@@ -167,26 +167,15 @@ Task<bool> Coordinator::write_response(fd_t client_fd, const Response& resp) {
     hdr.reserved  = 0;
     hdr.value_len = static_cast<uint32_t>(resp.value.size());
 
-    if (!co_await write_all(ctx_, client_fd, &hdr, sizeof(hdr)))
-        co_return false;
-
-    if (resp.value.empty()) co_return true;
-
-    if (pool_) {
-        auto handle = pool_->acquire();
-        if (handle && handle->size >= resp.value.size()) {
-            std::memcpy(handle->data, resp.value.data(), resp.value.size());
-            int32_t n = co_await async_write_fixed(
-                ctx_, client_fd, handle->data, resp.value.size(),
-                handle->index);
-            pool_->release(handle->index);
-            co_return n > 0;
-        }
-        if (handle) pool_->release(handle->index);
+    if (resp.value.empty()) {
+        co_return co_await write_all(ctx_, client_fd, &hdr, sizeof(hdr));
     }
 
-    co_return co_await write_all(ctx_, client_fd, resp.value.data(),
-                                  resp.value.size());
+    std::vector<uint8_t> buf(sizeof(hdr) + resp.value.size());
+    std::memcpy(buf.data(), &hdr, sizeof(hdr));
+    std::memcpy(buf.data() + sizeof(hdr), resp.value.data(),
+                resp.value.size());
+    co_return co_await write_all(ctx_, client_fd, buf.data(), buf.size());
 }
 
 void Coordinator::spawn(Task<> task) {

@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <cstring>
+#include <netinet/tcp.h>
 #include <stdexcept>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -68,6 +69,8 @@ void TcpListener::submit_accept() {
 }
 
 void TcpListener::handle_accept(int fd) {
+    int flag = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
     if (on_accept_) {
         on_accept_(TcpConnection(ctx_, fd));
     }

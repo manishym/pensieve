@@ -2,9 +2,12 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <random>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -20,6 +23,8 @@ struct BenchConfig {
     size_t num_keys = 10000;
     size_t value_size = 128;
     int wait_secs = 0;
+    int threads = 1;
+    std::string output_file;
 };
 
 struct LatencyReport {
@@ -60,7 +65,8 @@ static std::string random_hex(std::mt19937& rng, size_t len) {
 
 static int64_t percentile(const std::vector<int64_t>& sorted, double p) {
     if (sorted.empty()) return 0;
-    size_t idx = static_cast<size_t>(p * static_cast<double>(sorted.size() - 1));
+    size_t idx = static_cast<size_t>(
+        p * static_cast<double>(sorted.size() - 1));
     return sorted[idx];
 }
 
@@ -122,6 +128,64 @@ static void print_report(LatencyReport& report) {
     std::cout << std::flush;
 }
 
+static void compute_buckets(const std::vector<int64_t>& latencies,
+                            size_t out[kNumBuckets]) {
+    for (size_t i = 0; i < kNumBuckets; ++i) out[i] = 0;
+    for (int64_t us : latencies) {
+        size_t b = kNumBuckets - 1;
+        for (size_t i = 0; i < kNumBuckets - 1; ++i) {
+            if (us < kBucketCeils[i]) { b = i; break; }
+        }
+        ++out[b];
+    }
+}
+
+static std::string report_to_json(LatencyReport& report) {
+    std::sort(report.latencies_us.begin(), report.latencies_us.end());
+    double throughput = report.elapsed_secs > 0
+        ? static_cast<double>(report.total_ops) / report.elapsed_secs : 0;
+
+    size_t buckets[kNumBuckets] = {};
+    compute_buckets(report.latencies_us, buckets);
+
+    std::ostringstream js;
+    js << "{"
+       << "\"total_ops\":" << report.total_ops
+       << ",\"errors\":" << report.errors
+       << ",\"elapsed_secs\":" << std::fixed << std::setprecision(6)
+       << report.elapsed_secs
+       << ",\"throughput\":" << std::setprecision(1) << throughput
+       << ",\"p50\":" << percentile(report.latencies_us, 0.50)
+       << ",\"p95\":" << percentile(report.latencies_us, 0.95)
+       << ",\"p99\":" << percentile(report.latencies_us, 0.99)
+       << ",\"min\":" << (report.latencies_us.empty()
+                          ? 0 : report.latencies_us.front())
+       << ",\"max\":" << (report.latencies_us.empty()
+                          ? 0 : report.latencies_us.back())
+       << ",\"buckets\":[";
+    for (size_t i = 0; i < kNumBuckets; ++i) {
+        if (i > 0) js << ",";
+        js << buckets[i];
+    }
+    js << "]}";
+    return js.str();
+}
+
+static void write_json_output(const std::string& path,
+                               LatencyReport& put_report,
+                               LatencyReport& get_report,
+                               const BenchConfig& cfg) {
+    std::ofstream f(path);
+    f << "{\"threads\":" << cfg.threads
+      << ",\"num_keys\":" << cfg.num_keys
+      << ",\"value_size\":" << cfg.value_size
+      << ",\"put\":" << report_to_json(put_report)
+      << ",\"get\":" << report_to_json(get_report)
+      << "}\n";
+    f.close();
+    std::cout << "Results written to " << path << "\n" << std::flush;
+}
+
 static void print_sdk_stats(pensieve::PensieveClient& client) {
     auto s = client.stats();
     std::cout << "\n===== SDK Stats =====\n"
@@ -133,57 +197,120 @@ static void print_sdk_stats(pensieve::PensieveClient& client) {
               << std::flush;
 }
 
-static void log_progress(const char* phase, size_t done, size_t total) {
-    std::cerr << "\r  [" << phase << "] "
-              << done << " / " << total << std::flush;
-}
+struct ThreadResult {
+    std::vector<int64_t> latencies;
+    size_t errors = 0;
+};
 
-static LatencyReport run_puts(pensieve::PensieveClient& client,
-                              const std::vector<std::string>& keys,
-                              const std::string& value) {
-    LatencyReport report;
-    report.label = "PUT";
-    report.total_ops = keys.size();
-
-    auto wall_start = Clock::now();
-    for (size_t i = 0; i < keys.size(); ++i) {
+static void worker_put(pensieve::PensieveClient& client,
+                       const std::vector<std::string>& keys,
+                       const std::string& value,
+                       size_t begin, size_t end,
+                       ThreadResult& out) {
+    out.latencies.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i) {
         auto t0 = Clock::now();
         bool ok = client.put(keys[i], value);
         auto t1 = Clock::now();
-        auto us = std::chrono::duration_cast<Micros>(t1 - t0).count();
-        report.latencies_us.push_back(us);
-        if (!ok) ++report.errors;
-        if ((i + 1) % 1000 == 0 || i + 1 == keys.size())
-            log_progress("PUT", i + 1, keys.size());
+        out.latencies.push_back(
+            std::chrono::duration_cast<Micros>(t1 - t0).count());
+        if (!ok) ++out.errors;
     }
-    std::cerr << "\n";
-    auto wall_end = Clock::now();
-    report.elapsed_secs = std::chrono::duration<double>(
-        wall_end - wall_start).count();
-    return report;
 }
 
-static LatencyReport run_gets(pensieve::PensieveClient& client,
-                              const std::vector<std::string>& keys) {
-    LatencyReport report;
-    report.label = "GET";
-    report.total_ops = keys.size();
-
-    auto wall_start = Clock::now();
-    for (size_t i = 0; i < keys.size(); ++i) {
+static void worker_get(pensieve::PensieveClient& client,
+                       const std::vector<std::string>& keys,
+                       size_t begin, size_t end,
+                       ThreadResult& out) {
+    out.latencies.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i) {
         auto t0 = Clock::now();
         auto val = client.get(keys[i]);
         auto t1 = Clock::now();
-        auto us = std::chrono::duration_cast<Micros>(t1 - t0).count();
-        report.latencies_us.push_back(us);
-        if (!val.has_value()) ++report.errors;
-        if ((i + 1) % 1000 == 0 || i + 1 == keys.size())
-            log_progress("GET", i + 1, keys.size());
+        out.latencies.push_back(
+            std::chrono::duration_cast<Micros>(t1 - t0).count());
+        if (!val.has_value()) ++out.errors;
     }
-    std::cerr << "\n";
+}
+
+using WorkerClients = std::vector<std::unique_ptr<pensieve::PensieveClient>>;
+
+static WorkerClients make_clients(const BenchConfig& cfg, int n) {
+    WorkerClients clients;
+    clients.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        pensieve::PensieveClient::Config sdk_cfg;
+        sdk_cfg.seed_host = cfg.seed_host;
+        sdk_cfg.seed_port = cfg.seed_port;
+        sdk_cfg.max_connections_per_node = 4;
+        sdk_cfg.refresh_interval = std::chrono::seconds{30};
+        auto c = std::make_unique<pensieve::PensieveClient>(sdk_cfg);
+        if (!c->connect()) return {};
+        clients.push_back(std::move(c));
+    }
+    return clients;
+}
+
+static LatencyReport run_threaded_puts(WorkerClients& clients,
+                                       const std::vector<std::string>& keys,
+                                       const std::string& value) {
+    size_t n = clients.size();
+    size_t per = keys.size() / n;
+    std::vector<ThreadResult> results(n);
+    std::vector<std::thread> threads;
+
+    auto wall_start = Clock::now();
+    for (size_t t = 0; t < n; ++t) {
+        size_t begin = t * per;
+        size_t end = (t + 1 == n) ? keys.size() : begin + per;
+        threads.emplace_back(worker_put, std::ref(*clients[t]),
+                             std::cref(keys), std::cref(value),
+                             begin, end, std::ref(results[t]));
+    }
+    for (auto& th : threads) th.join();
     auto wall_end = Clock::now();
+
+    LatencyReport report;
+    report.label = "PUT";
     report.elapsed_secs = std::chrono::duration<double>(
         wall_end - wall_start).count();
+    for (auto& r : results) {
+        report.errors += r.errors;
+        report.latencies_us.insert(report.latencies_us.end(),
+                                   r.latencies.begin(), r.latencies.end());
+    }
+    report.total_ops = report.latencies_us.size();
+    return report;
+}
+
+static LatencyReport run_threaded_gets(WorkerClients& clients,
+                                       const std::vector<std::string>& keys) {
+    size_t n = clients.size();
+    size_t per = keys.size() / n;
+    std::vector<ThreadResult> results(n);
+    std::vector<std::thread> threads;
+
+    auto wall_start = Clock::now();
+    for (size_t t = 0; t < n; ++t) {
+        size_t begin = t * per;
+        size_t end = (t + 1 == n) ? keys.size() : begin + per;
+        threads.emplace_back(worker_get, std::ref(*clients[t]),
+                             std::cref(keys),
+                             begin, end, std::ref(results[t]));
+    }
+    for (auto& th : threads) th.join();
+    auto wall_end = Clock::now();
+
+    LatencyReport report;
+    report.label = "GET";
+    report.elapsed_secs = std::chrono::duration<double>(
+        wall_end - wall_start).count();
+    for (auto& r : results) {
+        report.errors += r.errors;
+        report.latencies_us.insert(report.latencies_us.end(),
+                                   r.latencies.begin(), r.latencies.end());
+    }
+    report.total_ops = report.latencies_us.size();
     return report;
 }
 
@@ -199,6 +326,10 @@ static BenchConfig parse_args(int argc, const char* const argv[]) {
             cfg.value_size = static_cast<size_t>(std::stoul(argv[++i]));
         else if (arg == "--wait" && i + 1 < argc)
             cfg.wait_secs = std::stoi(argv[++i]);
+        else if (arg == "--threads" && i + 1 < argc)
+            cfg.threads = std::stoi(argv[++i]);
+        else if (arg == "--output" && i + 1 < argc)
+            cfg.output_file = argv[++i];
     }
     return cfg;
 }
@@ -206,7 +337,7 @@ static BenchConfig parse_args(int argc, const char* const argv[]) {
 static void usage(const char* prog) {
     std::cerr << "Usage: " << prog
               << " --seed HOST:PORT [--num-keys N] [--value-size B]"
-              << " [--wait SECS]\n";
+              << " [--wait SECS] [--threads T] [--output FILE]\n";
 }
 
 static bool connect_with_retries(pensieve::PensieveClient& client,
@@ -238,7 +369,8 @@ int main(int argc, char* argv[]) {
               << "  seed:       " << bench_cfg.seed_host
               << ":" << bench_cfg.seed_port << "\n"
               << "  num_keys:   " << bench_cfg.num_keys << "\n"
-              << "  value_size: " << bench_cfg.value_size << " bytes\n\n"
+              << "  value_size: " << bench_cfg.value_size << " bytes\n"
+              << "  threads:    " << bench_cfg.threads << "\n\n"
               << std::flush;
 
     pensieve::PensieveClient::Config sdk_cfg;
@@ -263,17 +395,28 @@ int main(int argc, char* argv[]) {
 
     std::string value = random_hex(rng, bench_cfg.value_size);
 
-    std::cout << "--- Phase 1: PUT " << keys.size()
-              << " keys ---\n" << std::flush;
-    auto put_report = run_puts(client, keys, value);
+    auto worker_clients = make_clients(bench_cfg, bench_cfg.threads);
+    if (worker_clients.empty()) {
+        std::cerr << "error: could not connect worker clients\n";
+        return 1;
+    }
+
+    std::cout << "--- Phase 1: PUT " << keys.size() << " keys ("
+              << bench_cfg.threads << " threads) ---\n" << std::flush;
+    auto put_report = run_threaded_puts(worker_clients, keys, value);
     print_report(put_report);
 
-    std::cout << "\n--- Phase 2: GET " << keys.size()
-              << " keys ---\n" << std::flush;
-    auto get_report = run_gets(client, keys);
+    std::cout << "\n--- Phase 2: GET " << keys.size() << " keys ("
+              << bench_cfg.threads << " threads) ---\n" << std::flush;
+    auto get_report = run_threaded_gets(worker_clients, keys);
     print_report(get_report);
 
     print_sdk_stats(client);
+
+    if (!bench_cfg.output_file.empty())
+        write_json_output(bench_cfg.output_file, put_report, get_report,
+                          bench_cfg);
+
     std::cout << "\nDone.\n" << std::flush;
     return 0;
 }

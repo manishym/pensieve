@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -27,6 +28,9 @@ int tcp_connect(const std::string& host, uint16_t port) {
     int fd = socket(result->ai_family, result->ai_socktype,
                     result->ai_protocol);
     if (fd < 0) { freeaddrinfo(result); return -1; }
+
+    int flag = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
     if (connect(fd, result->ai_addr, result->ai_addrlen) < 0) {
         close(fd);
@@ -154,6 +158,7 @@ bool TopologyManager::refresh() {
 }
 
 void TopologyManager::start_background_refresh(std::chrono::seconds interval) {
+    if (interval.count() <= 0) return;
     if (running_.exchange(true)) return;
     refresh_thread_ = std::thread(&TopologyManager::refresh_loop, this,
                                   interval);

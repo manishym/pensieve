@@ -104,6 +104,12 @@ add_executable(pensieve_cli src/sdk/cli.cpp)
 target_link_libraries(pensieve_cli PRIVATE pensieve_sdk)
 
 # ---------------------------------------------------------------------------
+# Benchmark binary
+# ---------------------------------------------------------------------------
+add_executable(pensieve_bench src/sdk/benchmark.cpp)
+target_link_libraries(pensieve_bench PRIVATE pensieve_sdk)
+
+# ---------------------------------------------------------------------------
 # Tests (GTest via FetchContent)
 # ---------------------------------------------------------------------------
 include(FetchContent)

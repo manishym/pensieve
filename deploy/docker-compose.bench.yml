@@ -1,0 +1,148 @@
+# Pensieve 3-Node Cluster + Multi-Client Benchmark with Consolidator
+#
+# Host networking — no bridge/NAT overhead.
+# Each node uses unique ports since they share the host network stack.
+#
+#   node1: data=11211  gossip=7946
+#   node2: data=11212  gossip=7947
+#   node3: data=11213  gossip=7948
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.bench.yml up --build
+
+x-pensieve-common: &pensieve-common
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  network_mode: host
+  restart: unless-stopped
+  security_opt:
+    - seccomp:unconfined
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+
+x-bench-common: &bench-common
+  build:
+    context: ..
+    dockerfile: Dockerfile.bench
+  network_mode: host
+  depends_on:
+    - node1
+    - node2
+    - node3
+  volumes:
+    - bench-results:/results
+
+volumes:
+  bench-results:
+
+services:
+  node1:
+    <<: *pensieve-common
+    container_name: pensieve-node1
+    cpuset: "3"
+    environment:
+      PENSIEVE_HOST: "127.0.0.1"
+      PENSIEVE_DATA_PORT: "11211"
+      PENSIEVE_GOSSIP_PORT: "7946"
+      PENSIEVE_MEMORY_MB: "64"
+
+  node2:
+    <<: *pensieve-common
+    container_name: pensieve-node2
+    cpuset: "4"
+    environment:
+      PENSIEVE_HOST: "127.0.0.1"
+      PENSIEVE_DATA_PORT: "11212"
+      PENSIEVE_GOSSIP_PORT: "7947"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "127.0.0.1:7946"
+    depends_on:
+      - node1
+
+  node3:
+    <<: *pensieve-common
+    container_name: pensieve-node3
+    cpuset: "5"
+    environment:
+      PENSIEVE_HOST: "127.0.0.1"
+      PENSIEVE_DATA_PORT: "11213"
+      PENSIEVE_GOSSIP_PORT: "7948"
+      PENSIEVE_MEMORY_MB: "64"
+      PENSIEVE_SEED: "127.0.0.1:7946"
+    depends_on:
+      - node1
+
+  bench1:
+    <<: *bench-common
+    container_name: pensieve-bench1
+    cpuset: "6"
+    command:
+      - "--seed"
+      - "127.0.0.1:11211"
+      - "--num-keys"
+      - "1000000"
+      - "--value-size"
+      - "32"
+      - "--threads"
+      - "4"
+      - "--wait"
+      - "5"
+      - "--output"
+      - "/results/bench1.json"
+
+  bench2:
+    <<: *bench-common
+    container_name: pensieve-bench2
+    cpuset: "2"
+    command:
+      - "--seed"
+      - "127.0.0.1:11212"
+      - "--num-keys"
+      - "1000000"
+      - "--value-size"
+      - "32"
+      - "--threads"
+      - "4"
+      - "--wait"
+      - "5"
+      - "--output"
+      - "/results/bench2.json"
+
+  bench3:
+    <<: *bench-common
+    container_name: pensieve-bench3
+    cpuset: "7"
+    command:
+      - "--seed"
+      - "127.0.0.1:11213"
+      - "--num-keys"
+      - "1000000"
+      - "--value-size"
+      - "32"
+      - "--threads"
+      - "4"
+      - "--wait"
+      - "5"
+      - "--output"
+      - "/results/bench3.json"
+
+  consolidator:
+    image: python:3.12-slim
+    container_name: pensieve-consolidator
+    volumes:
+      - bench-results:/results
+      - ./consolidate.py:/app/consolidate.py:ro
+    environment:
+      RESULTS_DIR: "/results"
+      EXPECTED_CLIENTS: "3"
+    depends_on:
+      bench1:
+        condition: service_completed_successfully
+      bench2:
+        condition: service_completed_successfully
+      bench3:
+        condition: service_completed_successfully
+    command: ["python3", "/app/consolidate.py"]

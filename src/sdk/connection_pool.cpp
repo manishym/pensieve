@@ -105,15 +105,24 @@ bool ConnectionPool::send_request(int fd, const Request& req) {
 }
 
 std::optional<Response> ConnectionPool::recv_response(int fd) {
-    ResponseHeader hdr{};
+    MemHeader hdr{};
     if (!recv_all(fd, &hdr, sizeof(hdr))) return std::nullopt;
 
+    if (hdr.magic != 0x81) return std::nullopt; // Must be Response magic
+
+    uint32_t body_len = be32toh(hdr.body_len);
     std::string value;
-    if (hdr.value_len > 0) {
-        value.resize(hdr.value_len);
-        if (!recv_all(fd, value.data(), hdr.value_len)) return std::nullopt;
+    if (body_len > 0) {
+        value.resize(body_len);
+        if (!recv_all(fd, value.data(), body_len)) return std::nullopt;
     }
-    return Response{hdr.status, std::move(value)};
+    
+    Response resp;
+    resp.status = static_cast<Status>(be16toh(hdr.vbucket));
+    resp.value = std::move(value);
+    resp.opaque = be32toh(hdr.opaque);
+    resp.cas = be64toh(hdr.cas);
+    return resp;
 }
 
 size_t ConnectionPool::idle_count() const {

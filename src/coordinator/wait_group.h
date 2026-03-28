@@ -34,7 +34,7 @@ public:
     // caller must hold.  If is_initiator is true, the caller performs the
     // actual fetch and must call complete().  Otherwise, the caller passes
     // the handle to co_await wait(handle).
-    JoinResult try_join(const std::string& key);
+    JoinResult try_join(std::string_view key);
 
     // Awaitable that suspends until the initiator calls complete().
     // Operates directly on the FetchHandle -- no map lookup required,
@@ -56,13 +56,18 @@ public:
 
     // Called by the initiator when the fetch completes.  Resumes all waiting
     // coroutines with the result.
-    void complete(const std::string& key, std::optional<std::string> value);
+    void complete(std::string_view key, std::optional<std::string> value);
 
     size_t pending_count() const;
 
 private:
+    struct TransparentStringHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view k) const { return std::hash<std::string_view>{}(k); }
+    };
+
     mutable std::mutex mu_;
-    std::unordered_map<std::string, FetchHandle> pending_;
+    std::unordered_map<std::string, FetchHandle, TransparentStringHash, std::equal_to<>> pending_;
 };
 
 }  // namespace pensieve

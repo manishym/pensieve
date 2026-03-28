@@ -4,19 +4,15 @@
 
 using namespace pensieve;
 
-TEST(Protocol, RequestHeaderSize) {
-    EXPECT_EQ(sizeof(RequestHeader), 8u);
-}
-
-TEST(Protocol, ResponseHeaderSize) {
-    EXPECT_EQ(sizeof(ResponseHeader), 8u);
+TEST(Protocol, MemHeaderSize) {
+    EXPECT_EQ(sizeof(MemHeader), 24u);
 }
 
 TEST(Protocol, GetRequestRoundTrip) {
     Request req{Opcode::Get, "mykey", ""};
     auto wire = serialize_request(req);
 
-    EXPECT_EQ(wire.size(), sizeof(RequestHeader) + 5);
+    EXPECT_EQ(wire.size(), sizeof(MemHeader) + 5);
 
     auto parsed = parse_request(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());
@@ -25,15 +21,15 @@ TEST(Protocol, GetRequestRoundTrip) {
     EXPECT_TRUE(parsed->value.empty());
 }
 
-TEST(Protocol, PutRequestRoundTrip) {
-    Request req{Opcode::Put, "key1", "value123"};
+TEST(Protocol, SetRequestRoundTrip) {
+    Request req{Opcode::Set, "key1", "value123"};
     auto wire = serialize_request(req);
 
-    EXPECT_EQ(wire.size(), sizeof(RequestHeader) + 4 + 8);
+    EXPECT_EQ(wire.size(), sizeof(MemHeader) + 4 + 8);
 
     auto parsed = parse_request(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(parsed->opcode, Opcode::Put);
+    EXPECT_EQ(parsed->opcode, Opcode::Set);
     EXPECT_EQ(parsed->key, "key1");
     EXPECT_EQ(parsed->value, "value123");
 }
@@ -51,7 +47,7 @@ TEST(Protocol, OkResponseRoundTrip) {
     Response resp{Status::Ok, "hello world"};
     auto wire = serialize_response(resp);
 
-    EXPECT_EQ(wire.size(), sizeof(ResponseHeader) + 11);
+    EXPECT_EQ(wire.size(), sizeof(MemHeader) + 11);
 
     auto parsed = parse_response(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());
@@ -78,20 +74,19 @@ TEST(Protocol, ErrorResponseRoundTrip) {
 }
 
 TEST(Protocol, TruncatedRequestHeaderFails) {
-    uint8_t buf[4] = {};
-    EXPECT_FALSE(parse_request(buf, 4).has_value());
+    uint8_t buf[20] = {}; // Less than 24
+    EXPECT_FALSE(parse_request(buf, 20).has_value());
 }
 
 TEST(Protocol, TruncatedRequestPayloadFails) {
     Request req{Opcode::Get, "longkey", ""};
     auto wire = serialize_request(req);
-    // Chop off the last byte of the payload
     EXPECT_FALSE(parse_request(wire.data(), wire.size() - 1).has_value());
 }
 
 TEST(Protocol, TruncatedResponseHeaderFails) {
-    uint8_t buf[4] = {};
-    EXPECT_FALSE(parse_response(buf, 4).has_value());
+    uint8_t buf[20] = {};
+    EXPECT_FALSE(parse_response(buf, 20).has_value());
 }
 
 TEST(Protocol, TruncatedResponsePayloadFails) {
@@ -110,7 +105,7 @@ TEST(Protocol, EmptyKeyRequest) {
 
 TEST(Protocol, LargeValue) {
     std::string big_value(65535, 'X');
-    Request req{Opcode::Put, "k", big_value};
+    Request req{Opcode::Set, "k", big_value};
     auto wire = serialize_request(req);
     auto parsed = parse_request(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());

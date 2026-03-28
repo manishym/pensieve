@@ -74,22 +74,31 @@ bool TopologyManager::fetch_topology(const std::string& host, uint16_t port,
     int fd = tcp_connect(host, port);
     if (fd < 0) return false;
 
-    RequestHeader hdr{};
-    hdr.opcode = Opcode::ClusterInfo;
-    hdr.flags = 0;
+    MemHeader hdr{};
+    hdr.magic = 0x80;
+    hdr.opcode = static_cast<uint8_t>(Opcode::ClusterInfo);
     hdr.key_len = 0;
-    hdr.value_len = 0;
+    hdr.ext_len = 0;
+    hdr.data_type = 0;
+    hdr.vbucket = 0;
+    hdr.body_len = 0;
+    hdr.opaque = 0;
+    hdr.cas = 0;
 
     bool ok = send_all(fd, &hdr, sizeof(hdr));
     if (!ok) { close(fd); return false; }
 
-    ResponseHeader resp_hdr{};
+    MemHeader resp_hdr{};
     ok = recv_all(fd, &resp_hdr, sizeof(resp_hdr));
-    if (!ok || resp_hdr.status != Status::Ok) { close(fd); return false; }
+    if (!ok || resp_hdr.magic != 0x81) { close(fd); return false; }
 
-    std::string payload(resp_hdr.value_len, '\0');
-    if (resp_hdr.value_len > 0) {
-        ok = recv_all(fd, payload.data(), resp_hdr.value_len);
+    Status status = static_cast<Status>(be16toh(resp_hdr.vbucket));
+    if (status != Status::Ok) { close(fd); return false; }
+
+    uint32_t body_len = be32toh(resp_hdr.body_len);
+    std::string payload(body_len, '\0');
+    if (body_len > 0) {
+        ok = recv_all(fd, payload.data(), body_len);
         if (!ok) { close(fd); return false; }
     }
     close(fd);

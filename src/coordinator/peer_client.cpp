@@ -71,42 +71,44 @@ Task<Response> PeerClient::send_request(fd_t peer_fd, const Request& req) {
         co_return Response{Status::Error, {}};
     }
 
-    ResponseHeader hdr{};
+    MemHeader hdr{};
     if (!co_await read_exact(ctx_, peer_fd, &hdr, sizeof(hdr))) {
         co_return Response{Status::Error, {}};
     }
 
+    if (hdr.magic != 0x81) {
+        co_return Response{Status::Error, {}};
+    }
+
+    uint32_t body_len = be32toh(hdr.body_len);
     std::string value;
-    if (hdr.value_len > 0) {
+    if (body_len > 0) {
+        std::optional<BufferPool::BufferHandle> handle;
         if (buf_pool_) {
-            auto handle = buf_pool_->acquire();
-            if (handle && handle->size >= hdr.value_len) {
-                if (!co_await read_exact(ctx_, peer_fd, handle->data,
-                                         hdr.value_len)) {
-                    buf_pool_->release(handle->index);
-                    co_return Response{Status::Error, {}};
-                }
-                value.assign(reinterpret_cast<const char*>(handle->data),
-                             hdr.value_len);
+            handle = buf_pool_->acquire();
+        }
+
+        if (handle && handle->size >= body_len) {
+            // Use buffer pool
+            if (!co_await read_exact(ctx_, peer_fd, handle->data, body_len)) {
                 buf_pool_->release(handle->index);
-            } else {
-                if (handle) buf_pool_->release(handle->index);
-                value.resize(hdr.value_len);
-                if (!co_await read_exact(ctx_, peer_fd, value.data(),
-                                         hdr.value_len)) {
-                    co_return Response{Status::Error, {}};
-                }
+                co_return Response{Status::Error, {}};
             }
+            value.assign(reinterpret_cast<const char*>(handle->data), body_len);
+            buf_pool_->release(handle->index);
         } else {
-            value.resize(hdr.value_len);
-            if (!co_await read_exact(ctx_, peer_fd, value.data(),
-                                     hdr.value_len)) {
+            // Fallback path
+            if (handle) { // Acquired a buffer but it was too small
+                buf_pool_->release(handle->index);
+            }
+            value.resize(body_len);
+            if (!co_await read_exact(ctx_, peer_fd, value.data(), body_len)) {
                 co_return Response{Status::Error, {}};
             }
         }
     }
 
-    co_return Response{hdr.status, std::move(value)};
+    co_return Response{static_cast<Status>(be16toh(hdr.vbucket)), std::move(value), be32toh(hdr.opaque), be64toh(hdr.cas)};
 }
 
 }  // namespace pensieve

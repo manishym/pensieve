@@ -7,6 +7,12 @@
 
 namespace pensieve {
 
+struct HandleGuard {
+    BufferPool* pool;
+    std::optional<BufferPool::BufferHandle> handle;
+    ~HandleGuard() { if (pool && handle) pool->release(handle->index); }
+};
+
 Coordinator::Coordinator(IoUringContext& ctx, LocalStore& store,
                          RingStore& ring, MemberList& members,
                          NodeId self, BufferPool* pool)
@@ -19,69 +25,65 @@ Coordinator::Coordinator(IoUringContext& ctx, LocalStore& store,
       peer_client_(ctx, pool) {}
 
 Task<> Coordinator::handle_connection(fd_t client_fd) {
-    while (true) {
-        RequestHeader hdr{};
-        if (!co_await read_exact(ctx_, client_fd, &hdr, sizeof(hdr))) break;
-
-        size_t payload_len =
-            static_cast<size_t>(hdr.key_len) + hdr.value_len;
-        std::vector<uint8_t> payload(payload_len);
-        if (payload_len > 0 &&
-            !co_await read_exact(ctx_, client_fd, payload.data(),
-                                 payload_len)) {
-            break;
-        }
-
-        Request req;
-        req.opcode = hdr.opcode;
-        req.key.assign(reinterpret_cast<const char*>(payload.data()),
-                       hdr.key_len);
-        if (hdr.value_len > 0) {
-            req.value.assign(
-                reinterpret_cast<const char*>(payload.data()) + hdr.key_len,
-                hdr.value_len);
-        }
-
-        if (req.opcode == Opcode::ClusterInfo) {
-            auto resp = serve_cluster_info();
-            if (!co_await write_response(client_fd, resp)) break;
-            continue;
-        }
-
-        uint32_t hash = hash_key(req.key);
-        auto owner = ring_.get_node_for_key(hash);
-
-        Response resp;
-        if (!owner.has_value() || *owner == self_) {
-            resp = co_await serve_local(req);
-        } else {
-            if (req.opcode == Opcode::Get) {
-                auto [is_initiator, handle] =
-                    wait_group_.try_join(req.key);
-                if (is_initiator) {
-                    resp = co_await proxy_to_peer(req, *owner);
-                    wait_group_.complete(
-                        req.key,
-                        resp.status == Status::Ok
-                            ? std::optional(resp.value)
-                            : std::nullopt);
-                } else {
-                    auto result =
-                        co_await wait_group_.wait(std::move(handle));
-                    if (result.has_value()) {
-                        resp = {Status::Ok, std::move(*result)};
-                    } else {
-                        resp = {Status::NotFound, {}};
-                    }
-                }
-            } else {
-                resp = co_await proxy_to_peer(req, *owner);
-            }
-        }
-
-        if (!co_await write_response(client_fd, resp)) break;
-    }
+    while (co_await process_single_request(client_fd)) {}
     co_await async_close(ctx_, client_fd);
+}
+
+Task<bool> Coordinator::process_single_request(fd_t client_fd) {
+    MemHeader hdr{};
+    if (!co_await read_exact(ctx_, client_fd, &hdr, sizeof(hdr))) co_return false;
+
+    if (hdr.magic != 0x80) co_return false; // Must be Request magic
+
+    uint16_t key_len = be16toh(hdr.key_len);
+    uint32_t body_len = be32toh(hdr.body_len);
+    uint8_t ext_len = hdr.ext_len;
+    uint32_t opaque = be32toh(hdr.opaque);
+    uint64_t cas = be64toh(hdr.cas);
+
+    if (ext_len + key_len > body_len) co_return false;
+
+    HandleGuard guard{pool_, std::nullopt};
+    uint8_t* payload_data = nullptr;
+    std::vector<uint8_t> fallback;
+
+    if (body_len > 0) {
+        if (pool_ && body_len <= pool_->buffer_size()) {
+            guard.handle = pool_->acquire();
+        }
+        if (guard.handle) {
+            payload_data = guard.handle->data;
+        } else {
+            fallback.resize(body_len);
+            payload_data = fallback.data();
+        }
+
+        if (!co_await read_exact(ctx_, client_fd, payload_data, body_len)) {
+            co_return false;
+        }
+    }
+
+    Request req;
+    req.opcode = static_cast<Opcode>(hdr.opcode);
+    req.opaque = opaque;
+    req.cas = cas;
+
+    if (key_len > 0 && payload_data) {
+        req.key = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len, key_len);
+    }
+    
+    uint32_t value_len = body_len - ext_len - key_len;
+    if (value_len > 0 && payload_data) {
+        req.value = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len + key_len, value_len);
+    }
+
+    Response resp = co_await route_request(req);
+
+    resp.opaque = req.opaque;
+    resp.cas = req.cas;
+
+    bool ok = co_await write_response(client_fd, resp);
+    co_return ok;
 }
 
 Task<Response> Coordinator::serve_local(const Request& req) {
@@ -89,20 +91,56 @@ Task<Response> Coordinator::serve_local(const Request& req) {
         case Opcode::Get: {
             auto val = store_.get(req.key);
             if (val.has_value()) {
-                co_return Response{Status::Ok, std::move(*val)};
+                co_return Response{Status::Ok, std::move(*val), req.opaque, req.cas};
             }
-            co_return Response{Status::NotFound, {}};
+            co_return Response{Status::NotFound, {}, req.opaque, req.cas};
         }
-        case Opcode::Put: {
+        case Opcode::Set: {
             bool ok = store_.put(req.key, req.value);
-            co_return Response{ok ? Status::Ok : Status::Error, {}};
+            co_return Response{ok ? Status::Ok : Status::Error, {}, req.opaque, req.cas}; // Spec: 0x0008 OutOfMemory 
         }
         case Opcode::Del: {
             bool ok = store_.del(req.key);
-            co_return Response{ok ? Status::Ok : Status::NotFound, {}};
+            co_return Response{ok ? Status::Ok : Status::NotFound, {}, req.opaque, req.cas};
+        }
+        case Opcode::ClusterInfo: {
+            break;
         }
     }
-    co_return Response{Status::Error, {}};
+    co_return Response{Status::Error, {}, req.opaque, req.cas};
+}
+
+Task<Response> Coordinator::route_request(const Request& req) {
+    if (req.opcode == Opcode::ClusterInfo) {
+        co_return serve_cluster_info();
+    }
+
+    uint32_t hash = hash_key(req.key);
+    auto owner = ring_.get_node_for_key(hash);
+
+    if (!owner.has_value() || *owner == self_) {
+        co_return co_await serve_local(req);
+    }
+
+    if (req.opcode == Opcode::Get) {
+        auto [is_initiator, w_handle] = wait_group_.try_join(req.key);
+        if (is_initiator) {
+            auto resp = co_await proxy_to_peer(req, *owner);
+            wait_group_.complete(
+                req.key,
+                resp.status == Status::Ok ? std::optional(resp.value) : std::nullopt);
+            co_return resp;
+        } else {
+            auto result = co_await wait_group_.wait(std::move(w_handle));
+            if (result.has_value()) {
+                co_return Response{Status::Ok, std::move(*result), req.opaque, req.cas};
+            } else {
+                co_return Response{Status::NotFound, {}, req.opaque, req.cas};
+            }
+        }
+    }
+
+    co_return co_await proxy_to_peer(req, *owner);
 }
 
 Response Coordinator::serve_cluster_info() {
@@ -161,11 +199,16 @@ Task<Response> Coordinator::proxy_to_peer(const Request& req,
 }
 
 Task<bool> Coordinator::write_response(fd_t client_fd, const Response& resp) {
-    ResponseHeader hdr{};
-    hdr.status    = resp.status;
-    hdr.flags     = 0;
-    hdr.reserved  = 0;
-    hdr.value_len = static_cast<uint32_t>(resp.value.size());
+    MemHeader hdr{};
+    hdr.magic = 0x81;
+    hdr.opcode = 0x00;
+    hdr.key_len = 0;
+    hdr.ext_len = 0;
+    hdr.data_type = 0;
+    hdr.vbucket = htobe16(static_cast<uint16_t>(resp.status));
+    hdr.body_len = htobe32(static_cast<uint32_t>(resp.value.size()));
+    hdr.opaque = htobe32(resp.opaque);
+    hdr.cas = htobe64(resp.cas);
 
     if (resp.value.empty()) {
         co_return co_await write_all(ctx_, client_fd, &hdr, sizeof(hdr));

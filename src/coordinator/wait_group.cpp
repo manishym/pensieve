@@ -2,10 +2,10 @@
 
 namespace pensieve {
 
-WaitGroup::JoinResult WaitGroup::try_join(const std::string& key) {
+WaitGroup::JoinResult WaitGroup::try_join(std::string_view key) {
     std::lock_guard lock(mu_);
     auto [it, inserted] = pending_.emplace(
-        key, std::make_shared<PendingFetch>());
+        std::string(key), std::make_shared<PendingFetch>());
     return {inserted, it->second};
 }
 
@@ -13,7 +13,7 @@ WaitGroup::WaitAwaitable WaitGroup::wait(FetchHandle fetch) {
     return WaitAwaitable(std::move(fetch));
 }
 
-void WaitGroup::complete(const std::string& key,
+void WaitGroup::complete(std::string_view key,
                          std::optional<std::string> value) {
     FetchHandle fetch;
     std::vector<std::coroutine_handle<>> to_resume;

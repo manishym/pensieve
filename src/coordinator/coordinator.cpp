@@ -68,46 +68,7 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
             req.value = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len + key_len, value_len);
         }
 
-        if (req.opcode == Opcode::ClusterInfo) {
-            auto resp = serve_cluster_info();
-            resp.opaque = req.opaque;
-            resp.cas = req.cas;
-            bool ok = co_await write_response(client_fd, resp);
-            if (handle) pool_->release(handle->index);
-            if (!ok) break;
-            continue;
-        }
-
-        uint32_t hash = hash_key(req.key);
-        auto owner = ring_.get_node_for_key(hash);
-
-        Response resp;
-        if (!owner.has_value() || *owner == self_) {
-            resp = co_await serve_local(req);
-        } else {
-            if (req.opcode == Opcode::Get) {
-                auto [is_initiator, w_handle] =
-                    wait_group_.try_join(req.key);
-                if (is_initiator) {
-                    resp = co_await proxy_to_peer(req, *owner);
-                    wait_group_.complete(
-                        req.key,
-                        resp.status == Status::Ok
-                            ? std::optional(resp.value)
-                            : std::nullopt);
-                } else {
-                    auto result =
-                        co_await wait_group_.wait(std::move(w_handle));
-                    if (result.has_value()) {
-                        resp = Response{Status::Ok, std::move(*result)};
-                    } else {
-                        resp = Response{Status::NotFound, {}};
-                    }
-                }
-            } else {
-                resp = co_await proxy_to_peer(req, *owner);
-            }
-        }
+        Response resp = co_await route_request(req);
 
         resp.opaque = req.opaque;
         resp.cas = req.cas;
@@ -141,6 +102,39 @@ Task<Response> Coordinator::serve_local(const Request& req) {
         }
     }
     co_return Response{Status::Error, {}, req.opaque, req.cas};
+}
+
+Task<Response> Coordinator::route_request(const Request& req) {
+    if (req.opcode == Opcode::ClusterInfo) {
+        co_return serve_cluster_info();
+    }
+
+    uint32_t hash = hash_key(req.key);
+    auto owner = ring_.get_node_for_key(hash);
+
+    if (!owner.has_value() || *owner == self_) {
+        co_return co_await serve_local(req);
+    }
+
+    if (req.opcode == Opcode::Get) {
+        auto [is_initiator, w_handle] = wait_group_.try_join(req.key);
+        if (is_initiator) {
+            auto resp = co_await proxy_to_peer(req, *owner);
+            wait_group_.complete(
+                req.key,
+                resp.status == Status::Ok ? std::optional(resp.value) : std::nullopt);
+            co_return resp;
+        } else {
+            auto result = co_await wait_group_.wait(std::move(w_handle));
+            if (result.has_value()) {
+                co_return Response{Status::Ok, std::move(*result), req.opaque, req.cas};
+            } else {
+                co_return Response{Status::NotFound, {}, req.opaque, req.cas};
+            }
+        }
+    }
+
+    co_return co_await proxy_to_peer(req, *owner);
 }
 
 Response Coordinator::serve_cluster_info() {

@@ -72,26 +72,27 @@ void send_request(fd_t fd, const Request& req) {
 }
 
 Response recv_response(fd_t fd) {
-    ResponseHeader hdr{};
+    MemHeader hdr{};
     size_t off = 0;
     while (off < sizeof(hdr)) {
         ssize_t n = ::read(fd, reinterpret_cast<char*>(&hdr) + off,
                            sizeof(hdr) - off);
-        if (n <= 0) return {Status::Error, {}};
+        if (n <= 0) return Response{Status::Error, {}};
         off += static_cast<size_t>(n);
     }
 
+    uint32_t body_len = be32toh(hdr.body_len);
     std::string value;
-    if (hdr.value_len > 0) {
-        value.resize(hdr.value_len);
+    if (body_len > 0) {
+        value.resize(body_len);
         off = 0;
-        while (off < hdr.value_len) {
-            ssize_t n = ::read(fd, value.data() + off, hdr.value_len - off);
-            if (n <= 0) return {Status::Error, {}};
+        while (off < body_len) {
+            ssize_t n = ::read(fd, value.data() + off, body_len - off);
+            if (n <= 0) return Response{Status::Error, {}};
             off += static_cast<size_t>(n);
         }
     }
-    return {hdr.status, std::move(value)};
+    return Response{static_cast<Status>(be16toh(hdr.vbucket)), std::move(value), be32toh(hdr.opaque), be64toh(hdr.cas)};
 }
 
 }  // namespace
@@ -256,7 +257,7 @@ TEST_F(CoordinatorTest, ProxyToRemotePeer) {
 
     // Peer server: handles one connection with the wire protocol.
     auto peer_handler = [&](fd_t client_fd) -> Task<> {
-        RequestHeader hdr{};
+        MemHeader hdr{};
         {
             auto* dst = reinterpret_cast<uint8_t*>(&hdr);
             size_t remaining = sizeof(hdr);
@@ -269,7 +270,11 @@ TEST_F(CoordinatorTest, ProxyToRemotePeer) {
             }
         }
 
-        size_t plen = static_cast<size_t>(hdr.key_len) + hdr.value_len;
+        uint32_t body_len = be32toh(hdr.body_len);
+        uint16_t key_len = be16toh(hdr.key_len);
+        uint8_t ext_len = hdr.ext_len;
+        size_t plen = body_len;
+
         std::vector<uint8_t> payload(plen);
         if (plen > 0) {
             size_t remaining = plen;
@@ -283,15 +288,17 @@ TEST_F(CoordinatorTest, ProxyToRemotePeer) {
             }
         }
 
-        std::string key(reinterpret_cast<const char*>(payload.data()),
-                        hdr.key_len);
+        std::string key;
+        if (key_len > 0) {
+            key.assign(reinterpret_cast<const char*>(payload.data()) + ext_len, key_len);
+        }
         auto val = peer_store.get(key);
 
         Response resp;
         if (val.has_value()) {
-            resp = {Status::Ok, std::move(*val)};
+            resp = Response{Status::Ok, std::move(*val), be32toh(hdr.opaque), be64toh(hdr.cas)};
         } else {
-            resp = {Status::NotFound, {}};
+            resp = Response{Status::NotFound, {}, be32toh(hdr.opaque), be64toh(hdr.cas)};
         }
         auto wire = serialize_response(resp);
 

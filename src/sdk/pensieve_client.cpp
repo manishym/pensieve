@@ -57,8 +57,8 @@ struct PensieveClient::Impl {
 
             Request req;
             req.opcode = op;
-            req.key = std::string(key);
-            req.value = std::string(value);
+            req.key = key;
+            req.value = value;
 
             if (!ConnectionPool::send_request(fd, req)) {
                 pool.discard(fd);

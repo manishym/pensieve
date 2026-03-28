@@ -115,7 +115,7 @@ std::optional<std::string> PensieveClient::get(std::string_view key) {
 }
 
 bool PensieveClient::put(std::string_view key, std::string_view value) {
-    auto resp = impl_->execute(Opcode::Put, key, value);
+    auto resp = impl_->execute(Opcode::Set, key, value);
     return resp.has_value() && resp->status == Status::Ok;
 }
 

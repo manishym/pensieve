@@ -33,23 +33,27 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
 
         if (ext_len + key_len > body_len) break;
 
-        std::optional<BufferPool::BufferHandle> handle;
+        struct HandleGuard {
+            BufferPool* pool;
+            std::optional<BufferPool::BufferHandle> handle;
+            ~HandleGuard() { if (pool && handle) pool->release(handle->index); }
+        };
+        HandleGuard guard{pool_, std::nullopt};
         uint8_t* payload_data = nullptr;
         std::vector<uint8_t> fallback;
 
         if (body_len > 0) {
             if (pool_ && body_len <= pool_->buffer_size()) {
-                handle = pool_->acquire();
+                guard.handle = pool_->acquire();
             }
-            if (handle) {
-                payload_data = handle->data;
+            if (guard.handle) {
+                payload_data = guard.handle->data;
             } else {
                 fallback.resize(body_len);
                 payload_data = fallback.data();
             }
 
             if (!co_await read_exact(ctx_, client_fd, payload_data, body_len)) {
-                if (handle) pool_->release(handle->index);
                 break;
             }
         }
@@ -74,7 +78,6 @@ Task<> Coordinator::handle_connection(fd_t client_fd) {
         resp.cas = req.cas;
 
         bool ok = co_await write_response(client_fd, resp);
-        if (handle) pool_->release(handle->index);
         if (!ok) break;
     }
     co_await async_close(ctx_, client_fd);
@@ -89,7 +92,7 @@ Task<Response> Coordinator::serve_local(const Request& req) {
             }
             co_return Response{Status::NotFound, {}, req.opaque, req.cas};
         }
-        case Opcode::Put: {
+        case Opcode::Set: {
             bool ok = store_.put(req.key, req.value);
             co_return Response{ok ? Status::Ok : Status::Error, {}, req.opaque, req.cas}; // Spec: 0x0008 OutOfMemory 
         }

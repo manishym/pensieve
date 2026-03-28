@@ -10,7 +10,7 @@
 
 namespace pensieve {
 
-enum class Opcode : uint8_t { Get = 0x00, Put = 0x01, Del = 0x04, ClusterInfo = 0x0A };
+enum class Opcode : uint8_t { Get = 0x00, Set = 0x01, Del = 0x04, ClusterInfo = 0x0A };
 enum class Status : uint16_t { Ok = 0x0000, NotFound = 0x0001, Error = 0x0008 };
 
 // On-wire layout: 24 bytes, big-endian, no padding.
@@ -119,6 +119,7 @@ inline std::optional<Request> parse_request(const uint8_t* data, size_t len) {
     const char* payload = reinterpret_cast<const char*>(data + sizeof(hdr));
     if (key_len > 0) req.key = std::string_view(payload + ext_len, key_len);
 
+    if (static_cast<uint32_t>(ext_len) + static_cast<uint32_t>(key_len) > body_len) return std::nullopt;
     uint32_t value_len = body_len - ext_len - key_len;
     if (value_len > 0) req.value = std::string_view(payload + ext_len + key_len, value_len);
 

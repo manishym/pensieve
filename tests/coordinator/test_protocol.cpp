@@ -21,15 +21,15 @@ TEST(Protocol, GetRequestRoundTrip) {
     EXPECT_TRUE(parsed->value.empty());
 }
 
-TEST(Protocol, PutRequestRoundTrip) {
-    Request req{Opcode::Put, "key1", "value123"};
+TEST(Protocol, SetRequestRoundTrip) {
+    Request req{Opcode::Set, "key1", "value123"};
     auto wire = serialize_request(req);
 
     EXPECT_EQ(wire.size(), sizeof(MemHeader) + 4 + 8);
 
     auto parsed = parse_request(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());
-    EXPECT_EQ(parsed->opcode, Opcode::Put);
+    EXPECT_EQ(parsed->opcode, Opcode::Set);
     EXPECT_EQ(parsed->key, "key1");
     EXPECT_EQ(parsed->value, "value123");
 }
@@ -105,7 +105,7 @@ TEST(Protocol, EmptyKeyRequest) {
 
 TEST(Protocol, LargeValue) {
     std::string big_value(65535, 'X');
-    Request req{Opcode::Put, "k", big_value};
+    Request req{Opcode::Set, "k", big_value};
     auto wire = serialize_request(req);
     auto parsed = parse_request(wire.data(), wire.size());
     ASSERT_TRUE(parsed.has_value());

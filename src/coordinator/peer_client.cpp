@@ -83,29 +83,26 @@ Task<Response> PeerClient::send_request(fd_t peer_fd, const Request& req) {
     uint32_t body_len = be32toh(hdr.body_len);
     std::string value;
     if (body_len > 0) {
+        std::optional<BufferPool::BufferHandle> handle;
         if (buf_pool_) {
-            auto handle = buf_pool_->acquire();
-            if (handle && handle->size >= body_len) {
-                if (!co_await read_exact(ctx_, peer_fd, handle->data,
-                                         body_len)) {
-                    buf_pool_->release(handle->index);
-                    co_return Response{Status::Error, {}};
-                }
-                value.assign(reinterpret_cast<const char*>(handle->data),
-                             body_len);
+            handle = buf_pool_->acquire();
+        }
+
+        if (handle && handle->size >= body_len) {
+            // Use buffer pool
+            if (!co_await read_exact(ctx_, peer_fd, handle->data, body_len)) {
                 buf_pool_->release(handle->index);
-            } else {
-                if (handle) buf_pool_->release(handle->index);
-                value.resize(body_len);
-                if (!co_await read_exact(ctx_, peer_fd, value.data(),
-                                         body_len)) {
-                    co_return Response{Status::Error, {}};
-                }
+                co_return Response{Status::Error, {}};
             }
+            value.assign(reinterpret_cast<const char*>(handle->data), body_len);
+            buf_pool_->release(handle->index);
         } else {
+            // Fallback path
+            if (handle) { // Acquired a buffer but it was too small
+                buf_pool_->release(handle->index);
+            }
             value.resize(body_len);
-            if (!co_await read_exact(ctx_, peer_fd, value.data(),
-                                     body_len)) {
+            if (!co_await read_exact(ctx_, peer_fd, value.data(), body_len)) {
                 co_return Response{Status::Error, {}};
             }
         }

@@ -61,8 +61,13 @@ public:
     size_t pending_count() const;
 
 private:
+    struct TransparentStringHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view k) const { return std::hash<std::string_view>{}(k); }
+    };
+
     mutable std::mutex mu_;
-    std::unordered_map<std::string, FetchHandle> pending_;
+    std::unordered_map<std::string, FetchHandle, TransparentStringHash, std::equal_to<>> pending_;
 };
 
 }  // namespace pensieve

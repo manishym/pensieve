@@ -19,7 +19,7 @@ void WaitGroup::complete(std::string_view key,
     std::vector<std::coroutine_handle<>> to_resume;
     {
         std::lock_guard lock(mu_);
-        auto it = pending_.find(std::string(key));
+        auto it = pending_.find(key);
         if (it == pending_.end()) return;
         fetch = it->second;
         pending_.erase(it);

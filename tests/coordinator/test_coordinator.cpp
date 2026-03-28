@@ -137,8 +137,8 @@ TEST_F(CoordinatorTest, LocalPutAndGet) {
         int fd = blocking_connect(port);
         ASSERT_GE(fd, 0);
 
-        // PUT
-        send_request(fd, {Opcode::Put, "key1", "value1"});
+        // SET
+        send_request(fd, {Opcode::Set, "key1", "value1"});
         auto resp = recv_response(fd);
         EXPECT_EQ(resp.status, Status::Ok);
 
@@ -190,7 +190,7 @@ TEST_F(CoordinatorTest, LocalDelete) {
         int fd = blocking_connect(port);
         ASSERT_GE(fd, 0);
 
-        send_request(fd, {Opcode::Put, "k", "v"});
+        send_request(fd, {Opcode::Set, "k", "v"});
         recv_response(fd);
 
         send_request(fd, {Opcode::Del, "k", ""});
@@ -391,7 +391,7 @@ TEST_F(CoordinatorTest, ZeroCopyWithBufferPool) {
         ASSERT_GE(fd, 0);
 
         std::string big_value(2048, 'Z');
-        send_request(fd, {Opcode::Put, "bigkey", big_value});
+        send_request(fd, {Opcode::Set, "bigkey", big_value});
         auto resp = recv_response(fd);
         EXPECT_EQ(resp.status, Status::Ok);
 
@@ -437,9 +437,9 @@ TEST_F(CoordinatorTest, MultipleRequestsOnSameConnection) {
         for (int i = 0; i < 100; ++i) {
             std::string key = "key_" + std::to_string(i);
             std::string val = "val_" + std::to_string(i);
-            send_request(fd, {Opcode::Put, key, val});
+            send_request(fd, {Opcode::Set, key, val});
             auto resp = recv_response(fd);
-            EXPECT_EQ(resp.status, Status::Ok) << "PUT " << key;
+            EXPECT_EQ(resp.status, Status::Ok) << "SET " << key;
         }
 
         for (int i = 0; i < 100; ++i) {

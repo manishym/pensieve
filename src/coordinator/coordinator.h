@@ -35,6 +35,7 @@ private:
     Task<Response> proxy_to_peer(const Request& req, const NodeId& owner);
     Response serve_cluster_info();
     Task<Response> route_request(const Request& req);
+    Task<bool> process_single_request(fd_t client_fd);
     Task<bool> write_response(fd_t client_fd, const Response& resp);
 
     IoUringContext& ctx_;

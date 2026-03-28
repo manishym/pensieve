@@ -7,6 +7,12 @@
 
 namespace pensieve {
 
+struct HandleGuard {
+    BufferPool* pool;
+    std::optional<BufferPool::BufferHandle> handle;
+    ~HandleGuard() { if (pool && handle) pool->release(handle->index); }
+};
+
 Coordinator::Coordinator(IoUringContext& ctx, LocalStore& store,
                          RingStore& ring, MemberList& members,
                          NodeId self, BufferPool* pool)
@@ -19,68 +25,65 @@ Coordinator::Coordinator(IoUringContext& ctx, LocalStore& store,
       peer_client_(ctx, pool) {}
 
 Task<> Coordinator::handle_connection(fd_t client_fd) {
-    while (true) {
-        MemHeader hdr{};
-        if (!co_await read_exact(ctx_, client_fd, &hdr, sizeof(hdr))) break;
-
-        if (hdr.magic != 0x80) break; // Must be Request magic
-
-        uint16_t key_len = be16toh(hdr.key_len);
-        uint32_t body_len = be32toh(hdr.body_len);
-        uint8_t ext_len = hdr.ext_len;
-        uint32_t opaque = be32toh(hdr.opaque);
-        uint64_t cas = be64toh(hdr.cas);
-
-        if (ext_len + key_len > body_len) break;
-
-        struct HandleGuard {
-            BufferPool* pool;
-            std::optional<BufferPool::BufferHandle> handle;
-            ~HandleGuard() { if (pool && handle) pool->release(handle->index); }
-        };
-        HandleGuard guard{pool_, std::nullopt};
-        uint8_t* payload_data = nullptr;
-        std::vector<uint8_t> fallback;
-
-        if (body_len > 0) {
-            if (pool_ && body_len <= pool_->buffer_size()) {
-                guard.handle = pool_->acquire();
-            }
-            if (guard.handle) {
-                payload_data = guard.handle->data;
-            } else {
-                fallback.resize(body_len);
-                payload_data = fallback.data();
-            }
-
-            if (!co_await read_exact(ctx_, client_fd, payload_data, body_len)) {
-                break;
-            }
-        }
-
-        Request req;
-        req.opcode = static_cast<Opcode>(hdr.opcode);
-        req.opaque = opaque;
-        req.cas = cas;
-
-        if (key_len > 0 && payload_data) {
-            req.key = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len, key_len);
-        }
-        
-        uint32_t value_len = body_len - ext_len - key_len;
-        if (value_len > 0 && payload_data) {
-            req.value = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len + key_len, value_len);
-        }
-
-        Response resp = co_await route_request(req);
-
-        resp.opaque = req.opaque;
-        resp.cas = req.cas;
-
-        bool ok = co_await write_response(client_fd, resp);
-        if (!ok) break;
-    }
+    while (co_await process_single_request(client_fd)) {}
     co_await async_close(ctx_, client_fd);
+}
+
+Task<bool> Coordinator::process_single_request(fd_t client_fd) {
+    MemHeader hdr{};
+    if (!co_await read_exact(ctx_, client_fd, &hdr, sizeof(hdr))) co_return false;
+
+    if (hdr.magic != 0x80) co_return false; // Must be Request magic
+
+    uint16_t key_len = be16toh(hdr.key_len);
+    uint32_t body_len = be32toh(hdr.body_len);
+    uint8_t ext_len = hdr.ext_len;
+    uint32_t opaque = be32toh(hdr.opaque);
+    uint64_t cas = be64toh(hdr.cas);
+
+    if (ext_len + key_len > body_len) co_return false;
+
+    HandleGuard guard{pool_, std::nullopt};
+    uint8_t* payload_data = nullptr;
+    std::vector<uint8_t> fallback;
+
+    if (body_len > 0) {
+        if (pool_ && body_len <= pool_->buffer_size()) {
+            guard.handle = pool_->acquire();
+        }
+        if (guard.handle) {
+            payload_data = guard.handle->data;
+        } else {
+            fallback.resize(body_len);
+            payload_data = fallback.data();
+        }
+
+        if (!co_await read_exact(ctx_, client_fd, payload_data, body_len)) {
+            co_return false;
+        }
+    }
+
+    Request req;
+    req.opcode = static_cast<Opcode>(hdr.opcode);
+    req.opaque = opaque;
+    req.cas = cas;
+
+    if (key_len > 0 && payload_data) {
+        req.key = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len, key_len);
+    }
+    
+    uint32_t value_len = body_len - ext_len - key_len;
+    if (value_len > 0 && payload_data) {
+        req.value = std::string_view(reinterpret_cast<const char*>(payload_data) + ext_len + key_len, value_len);
+    }
+
+    Response resp = co_await route_request(req);
+
+    resp.opaque = req.opaque;
+    resp.cas = req.cas;
+
+    bool ok = co_await write_response(client_fd, resp);
+    co_return ok;
 }
 
 Task<Response> Coordinator::serve_local(const Request& req) {
